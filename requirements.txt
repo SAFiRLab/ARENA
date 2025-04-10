@@ -1,0 +1,5 @@
+numpy==1.23.5
+torch
+torchvision 
+torchaudio
+--find-links https://download.pytorch.org/whl/cu121
