@@ -1,0 +1,36 @@
+<package format="2">
+  <name>arena_msgs</name>
+  <version>0.1.0</version>
+  <description>Set of messages used by the arena algorithm</description>
+  <author email="david-alexandre.poissant@usherbrooke.ca">David-Alexandre Poissant</author>
+
+  <maintainer email="david-alexandre.poissant@usherbrooke.ca">David-Alexandre Poissant</maintainer>
+
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <run_depend>message_runtime</run_depend>
+  <run_depend>std_msgs</run_depend>
+  <run_depend>sensor_msgs</run_depend>
+  <run_depend>mavros_msgs</run_depend>
+  <run_depend>nav_msgs</run_depend>
+
+  <depend>message_generation</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>mavros_msgs</depend>
+  <depend>nav_msgs</depend>
+
+  <exec_depend>message_runtime</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>mavros_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <architecture_independent/>
+  </export>
+
+</package>
