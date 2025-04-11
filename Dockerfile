@@ -76,21 +76,27 @@ RUN echo "source /home/dev_ws/install/setup.bash" >> ~/.bashrc
 
 # Install additional ROS 2 packages
 RUN apt-get update && apt-get install -y ros-humble-rosbag2-storage-mcap
-#RUN mkdir home/ARENA
-#WORKDIR /home/ARENA
 
 #RUN mkdir -p /home/dev_ws/src
 #COPY simoffroad/Sim_2_Off_Road_ROS2_Msg/ /home/dev_ws/src
 
 
+
 # Build the custom message workspace
 RUN /bin/bash -c "source /opt/ros/humble/setup.sh && \
     cd /home/dev_ws/src && \
-    ros2 pkg create --build-type ament_cmake arena_msgs && \
+    if [ ! -d /home/dev_ws/src/arena_msgs ]; then \
+        ros2 pkg create --build-type ament_cmake arena_msgs; \
+    fi && \
+    if [ ! -d /home/dev_ws/src/arena_core ]; then \
+        ros2 pkg create --build-type ament_cmake arena_core; \
+    fi && \
     cd /home/dev_ws && \
     colcon build"
 
 RUN /bin/bash -c "rm -r /home/dev_ws/src/arena_msgs/*"
+RUN /bin/bash -c "rm -r /home/dev_ws/src/arena_core/*"
+
 
 # Add the new workspace setup to bashrc
 RUN echo "source /home/dev_ws/install/setup.bash" >> ~/.bashrc
