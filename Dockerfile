@@ -77,9 +77,29 @@ RUN echo "source /home/dev_ws/install/setup.bash" >> ~/.bashrc
 # Install additional ROS 2 packages
 RUN apt-get update && apt-get install -y ros-humble-rosbag2-storage-mcap
 
+# Add ARENA dependencies
+RUN apt-get update && apt-get install -y ros-humble-ompl ros-humble-octomap libjsoncpp-dev libsecret-1-dev libccd-dev
+WORKDIR /home
+
+RUN git clone https://github.com/flexible-collision-library/fcl.git
+RUN /bin/bash -c "cd /home/fcl && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make . -j4"
+
+RUN git clone https://github.com/Dave-Poissant/pagmo2.git
+RUN /bin/bash -c "cd /home/pagmo2 && \
+    git checkout -b work_on_archipelago && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DPAGMO_WITH_EIGEN3=ON -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build . && \
+    apt-get install sudo && \
+    sudo cmake --build . --target install"
+
 #RUN mkdir -p /home/dev_ws/src
 #COPY simoffroad/Sim_2_Off_Road_ROS2_Msg/ /home/dev_ws/src
-
 
 
 # Build the custom message workspace
