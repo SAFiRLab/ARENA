@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     software-properties-common \
     git \
+    ssh \
+    sudo \
     rapidjson-dev \
     libwebsocketpp-dev \
     libboost-all-dev \
@@ -21,12 +23,6 @@ RUN apt-get update && apt-get install -y \
     python3-argcomplete \
     python3-pip && \
     rm -rf /var/lib/apt/lists/*
-	
-
-# Install SSH and git
-RUN apt-get update && apt-get install -y \
-    ssh \
-    git
 
 COPY requirements.txt /home/requirements.txt
 RUN pip install -r /home/requirements.txt
@@ -45,7 +41,8 @@ RUN apt-get update && apt-get install -y \
 # Set up locale for ROS
 RUN apt-get update && apt-get install -y locales && \
     locale-gen en_US.UTF-8 && \
-    update-locale LANG=en_US.UTF-8
+    update-locale LANG=en_US.UTF-8 && \
+    rm -rf /var/lib/apt/lists/*
 
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
@@ -78,15 +75,15 @@ RUN echo "source /home/dev_ws/install/setup.bash" >> ~/.bashrc
 RUN apt-get update && apt-get install -y ros-humble-rosbag2-storage-mcap
 
 # Add ARENA dependencies
-RUN apt-get update && apt-get install -y ros-humble-ompl ros-humble-octomap libjsoncpp-dev libsecret-1-dev libccd-dev
-WORKDIR /home
+RUN apt-get update && apt-get install -y \
+    ros-humble-ompl \
+    ros-humble-octomap \
+    libjsoncpp-dev \
+    libsecret-1-dev \
+    libccd-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://github.com/flexible-collision-library/fcl.git
-RUN /bin/bash -c "cd /home/fcl && \
-    mkdir build && \
-    cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
-    make . -j4"
+WORKDIR /home
 
 RUN git clone https://github.com/Dave-Poissant/pagmo2.git
 RUN /bin/bash -c "cd /home/pagmo2 && \
@@ -97,6 +94,19 @@ RUN /bin/bash -c "cd /home/pagmo2 && \
     cmake --build . && \
     apt-get install sudo && \
     sudo cmake --build . --target install"
+
+RUN git clone https://github.com/flexible-collision-library/fcl.git
+RUN /bin/bash -c "cd /home/fcl && \
+    mkdir build && \
+    cd build && \
+    source /opt/ros/humble/setup.bash && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DFCL_WITH_OCTOMAP=ON \
+        -DOCTOMAP_INCLUDE_DIR=/opt/ros/humble/include \
+        -DOCTOMAP_LIBRARY=/opt/ros/humble/lib/x86_64-linux-gnu/liboctomap.so && \
+    make -j4 && \
+    sudo make install"
 
 #RUN mkdir -p /home/dev_ws/src
 #COPY simoffroad/Sim_2_Off_Road_ROS2_Msg/ /home/dev_ws/src

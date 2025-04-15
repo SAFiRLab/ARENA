@@ -3,5 +3,3 @@
 
 add_executable(pagmo_test pagmo_test.cpp)
 target_link_libraries(pagmo_test ${PROJECT_NAME}_arena_core)
-
-message("YOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO")

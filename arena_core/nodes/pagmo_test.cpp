@@ -37,7 +37,7 @@ int main()
 
     // generalised Schwefel test function).
 
-    std::function<pagmo::vector_double(const pagmo::vector_double &)> fitness_eval = &nadile_fitness;
+    /*std::function<pagmo::vector_double(const pagmo::vector_double &)> fitness_eval = &nadile_fitness;
 
     double* x_bounds = new double[2];
     x_bounds[0] = -10.0;
@@ -55,7 +55,7 @@ int main()
     prob_nadile.get_extra_info();
 
     // 2 - Instantiate a pagmo algorithm (NSGA-II).
-    pagmo::algorithm nsga2{pagmo::nsga2(25u, 0.95, 10.0, 0.01, 50.0, pagmo::random_device::next(), nullptr, 0)};
+    pagmo::algorithm nsga2{pagmo::nsga2(25u, 0.95, 10.0, 0.01, 50.0, pagmo::random_device::next())};
 
     pagmo::population pop_nadile{prob_nadile, 100u};
 
@@ -69,9 +69,9 @@ int main()
             std::cout << fitness[i][j] << " ";
         }
         std::cout << std::endl;
-    }
+    }*/
 
-    /*pagmo::problem prob{pagmo::schwefel(30)};
+    pagmo::problem prob{pagmo::schwefel(30)};
 
 
     // 2 - Instantiate a pagmo algorithm (self-adaptive differential
@@ -102,6 +102,6 @@ int main()
 
         std::cout << isl.get_population().champion_f()[0] << '\n';
 
-    }*/
+    }
 
 }
