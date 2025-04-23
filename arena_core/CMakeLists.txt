@@ -42,6 +42,17 @@ if (fcl_FOUND)
         endforeach()
 endif()
 
+find_package(rclcpp REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(octomap_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+
+#rosidl_generate_interfaces(${PROJECT_NAME}
+#    DEPENDENCIES
+#        octomap_msgs
+#)
+
 include_directories(
     libs/arena_core/include
     libs/arena_core/tests/include

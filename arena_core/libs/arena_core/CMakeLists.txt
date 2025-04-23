@@ -1,9 +1,10 @@
 # Library sources
 set(ARENA_CORE_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/math/nurbs.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/math/optimization/problems/pagmo_problems/nadile_problem.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/geometry/octomap_state_validity_checker.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/geometry/optimization_objective_custom.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/math/optimization/problems/pagmo_problems/nadile_problem.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/mapping/costmap_3D.cpp
 )
 
 # Library public headers

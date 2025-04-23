@@ -78,6 +78,7 @@ RUN apt-get update && apt-get install -y ros-humble-rosbag2-storage-mcap
 RUN apt-get update && apt-get install -y \
     ros-humble-ompl \
     ros-humble-octomap \
+    ros-humble-octomap-ros \
     libjsoncpp-dev \
     libsecret-1-dev \
     libccd-dev && \
@@ -111,6 +112,9 @@ RUN /bin/bash -c "cd /home/fcl && \
 #RUN mkdir -p /home/dev_ws/src
 #COPY simoffroad/Sim_2_Off_Road_ROS2_Msg/ /home/dev_ws/src
 
+# ARENA's ROS Messages dependencies
+RUN apt-get update && apt-get install -y \
+    ros-humble-octomap-msgs
 
 # Build the custom message workspace
 RUN /bin/bash -c "source /opt/ros/humble/setup.sh && \
