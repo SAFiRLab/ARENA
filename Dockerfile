@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y \
     git \
     ssh \
     sudo \
+    gdb \
     rapidjson-dev \
     libwebsocketpp-dev \
     libboost-all-dev \
@@ -79,6 +80,7 @@ RUN apt-get update && apt-get install -y \
     ros-humble-ompl \
     ros-humble-octomap \
     ros-humble-octomap-ros \
+    ros-humble-octomap-server \
     libjsoncpp-dev \
     libsecret-1-dev \
     libccd-dev && \

@@ -4,6 +4,7 @@ project(arena_core)
 # Enable testing via command-line flag (e.g. -DENABLE_TESTING=ON)
 option(ENABLE_TESTING "Enable tests" OFF)
 
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 
@@ -47,6 +48,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(octomap_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 #rosidl_generate_interfaces(${PROJECT_NAME}
 #    DEPENDENCIES
@@ -63,6 +65,7 @@ include_directories(
     ${YAML_INCLUDE_DIRS}
     ${PCL_INCLUDE_DIRS}
 )
+
 
 add_subdirectory(libs)
 

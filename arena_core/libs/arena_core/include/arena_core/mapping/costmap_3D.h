@@ -73,7 +73,7 @@ private:
     // Parameters
     float inflation_radius_ = 1.5;
     float min_influence_radius_ = 1.0;
-    float max_influence_radius_ = 9.0;
+    float max_influence_radius_ = 2.0;
 
 }; // class Costmap3D
 

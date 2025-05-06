@@ -9,6 +9,7 @@ ament_target_dependencies(costmap_3D_node
     sensor_msgs
     tf2_ros
     tf2
+    visualization_msgs
 )
 
 install(TARGETS
