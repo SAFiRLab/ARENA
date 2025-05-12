@@ -12,7 +12,17 @@ ament_target_dependencies(costmap_3D_node
     visualization_msgs
 )
 
+add_executable(nurbs_test_node nurbs_test_node.cpp)
+target_link_libraries(nurbs_test_node ${PROJECT_NAME}_arena_core)
+ament_target_dependencies(nurbs_test_node 
+    rclcpp 
+    visualization_msgs
+    tf2_ros
+    tf2
+)
+
 install(TARGETS
   costmap_3D_node
+  nurbs_test_node
   DESTINATION lib/${PROJECT_NAME}
 )
