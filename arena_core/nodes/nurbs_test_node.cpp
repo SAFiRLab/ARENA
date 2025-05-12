@@ -10,7 +10,8 @@ using namespace std::chrono_literals;
 class NurbsVisualizerNode : public rclcpp::Node {
 public:
     NurbsVisualizerNode()
-    : Node("nurbs_visualizer_node") {
+    : Node("nurbs_visualizer_node")
+    {
         marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("nurbs_marker", 10);
         control_points_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("control_points_marker", 10);
 
@@ -25,26 +26,28 @@ public:
         p4 << 3, 2, -5;
         Eigen::VectorXd p5(3);
         p5 << 4, 0, 2;
-        control_points_.push_back(p1);
-        control_points_.push_back(p2);
-        control_points_.push_back(p3);
-        control_points_.push_back(p4);
-        control_points_.push_back(p5);
 
-        std::vector<double> weights(control_points_.size(), 1.0);  // uniform weights
-        weights[1] = 5.0;  // example of a different weight for the second control point
-        weights[2] = 10.0;  // example of a different weight for the third control point
-        weights[3] = 7.0;  // example of a different weight for the fourth control point
+        control_points_.push_back(arena_core::ControlPoint<double>(p1));
+        control_points_.push_back(arena_core::ControlPoint<double>(p2));
+        control_points_.push_back(arena_core::ControlPoint<double>(p3));
+        control_points_.push_back(arena_core::ControlPoint<double>(p4));
+        control_points_.push_back(arena_core::ControlPoint<double>(p5));
+
+        // Example weights
+        control_points_[1].setW(5.0);
+        control_points_[2].setW(10.0);
+        control_points_[3].setW(7.0);
+
         int degree = 3;
-
         sample_size_ = 50;
-        nurbs_ = std::make_shared<arena_core::Nurbs>(control_points_, sample_size_, weights, degree);
+        nurbs_ = std::make_shared<arena_core::Nurbs>(control_points_, sample_size_, degree);
 
         timer_ = this->create_wall_timer(500ms, std::bind(&NurbsVisualizerNode::publishAll, this));
     }
 
 private:
-    void publish_marker() {
+    void publish_marker()
+    {
         visualization_msgs::msg::Marker marker;
         marker.header.frame_id = "map";
         marker.header.stamp = this->now();
@@ -116,7 +119,7 @@ private:
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr control_points_pub_;
     rclcpp::TimerBase::SharedPtr timer_;
-    std::vector<Eigen::VectorXd> control_points_;
+    std::vector<arena_core::ControlPoint<double>> control_points_;
     std::shared_ptr<arena_core::Nurbs> nurbs_;
     int sample_size_;
 };
