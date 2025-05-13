@@ -25,7 +25,7 @@ jobs:
 
     - name: Run Docker container
       run: |
-        docker run -it --rm --name test-container arena-cuda-ros
+        docker run -d --name test-container arena-cuda-ros
         sleep 5  # give time for the container to start
         docker ps -a  # check container status
 
