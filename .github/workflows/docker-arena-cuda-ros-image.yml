@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - Dockerfile  # Only trigger when the Dockerfile is modified
+  workflow_dispatch:  # This allows manual triggering
 
 jobs:
   docker-test:
