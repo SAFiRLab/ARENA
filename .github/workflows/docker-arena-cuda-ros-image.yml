@@ -3,8 +3,12 @@ name: Docker Image CI
 on:
   push:
     branches: [main]
+    paths:
+      - Dockerfile  # Only trigger when the Dockerfile is modified
   pull_request:
     branches: [main]
+    paths:
+      - Dockerfile  # Only trigger when the Dockerfile is modified
 
 jobs:
   docker-test:
