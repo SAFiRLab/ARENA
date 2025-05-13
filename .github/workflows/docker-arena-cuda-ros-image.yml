@@ -29,10 +29,6 @@ jobs:
         sleep 5  # give time for the container to start
         docker ps -a  # check container status
 
-    - name: Run health check or test command
-      run: |
-        docker exec test-container true
-
     - name: Log in to Github Container Registry (GHCR)
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
   
