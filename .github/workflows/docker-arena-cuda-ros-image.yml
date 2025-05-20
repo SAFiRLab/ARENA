@@ -39,4 +39,5 @@ jobs:
   
     - name: Push image
       run: |
-        docker push ghcr.io/${{ github.repository }}/arena-cuda-ros
+        IMAGE_NAME=$(echo "ghcr.io/${{ github.repository }}/arena-cuda-ros" | tr '[:upper:]' '[:lower:]')
+        docker push "$IMAGE_NAME"
