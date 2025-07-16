@@ -18,6 +18,9 @@ public:
 
     Eigen::VectorXd* evaluate() const;
     std::vector<std::vector<std::vector<double>>> derivatives(int order) const;
+    Eigen::MatrixXd fitPolynomialCurve(Eigen::VectorXd* points);
+    Eigen::VectorXd estimateParamByArcLength(const Eigen::VectorXd* points) const;
+    Eigen::VectorXd evaluatePolynomial(const Eigen::MatrixXd& coeffs,  double t);
 
     // Setters
     bool setDegree(int degree);

@@ -52,7 +52,7 @@ bool Nurbs::initialize()
 
 bool Nurbs::setDegree(int degree)
 {
-    if (1 <= degree <= 5)
+    if (1 <= degree && degree <= 5)
     {
         degree_ = degree;
         return initialize();
@@ -103,7 +103,7 @@ bool Nurbs::setControlPoint(const Eigen::VectorXd& control_point, int index)
         return false;
     }
 
-    if (0 <= index < control_points_.size())
+    if (0 <= index && index < control_points_.size())
     {
         control_points_[index] = control_point;
         return initialize();
@@ -399,5 +399,71 @@ std::vector<std::vector<std::vector<double>>> Nurbs::derivatives(int order) cons
 
     return CK;
 }
+
+
+Eigen::VectorXd Nurbs::estimateParamByArcLength(const Eigen::VectorXd* points) const
+{
+    int N = sample_size_;
+    Eigen::VectorXd t(N);
+    t(0) = 0.0;
+
+    for (int i = 1; i < N; ++i)
+        t(i) = t(i-1) + (points[i] - points[i-1]).norm();
+
+    // Optional: normalize to [0, 1]
+    t /= t(N-1);
+    return t;
+}
+
+
+Eigen::MatrixXd Nurbs::fitPolynomialCurve(Eigen::VectorXd* points)
+{
+    int degree = 15;  // Degree of the polynomial
+    if (!adequate_conf_)
+        throw std::runtime_error("Number of points must be greater than polynomial degree.");
+
+    const int D = points[0].size();  // Dimensionality of the data
+    Eigen::VectorXd t = estimateParamByArcLength(points);
+
+    // Create Vandermonde matrix V (N x (degree+1))
+    Eigen::MatrixXd V(sample_size_, degree + 1);
+    for (int i = 0; i < sample_size_; ++i)
+    {
+        double val = 1.0;
+        for (int j = 0; j <= degree; ++j)
+        {
+            V(i, j) = val;
+            val *= t(i);
+        }
+    }
+
+    // Create Y matrix (N x D) from input curve points
+    Eigen::MatrixXd Y(sample_size_, D);
+    for (int i = 0; i < sample_size_; ++i)
+        Y.row(i) = points[i].transpose();
+
+    // Solve for coefficients using QR decomposition: minimize ||V * C - Y||
+    // Result: C is (degree+1) x D, transpose to get (D x degree+1)
+    Eigen::MatrixXd C = V.colPivHouseholderQr().solve(Y);
+
+    return C.transpose();  // Each row corresponds to one dimension (e.g., x(t), y(t), z(t))
+}
+
+
+Eigen::VectorXd Nurbs::evaluatePolynomial(const Eigen::MatrixXd& coeffs,  double t)
+{
+    const int D = coeffs.rows();
+    const int degree = coeffs.cols() - 1;
+
+    Eigen::VectorXd result = Eigen::VectorXd::Zero(D);
+    double t_pow = 1.0;
+    for (int i = 0; i <= degree; ++i)
+    {
+        result += coeffs.col(i) * t_pow;
+        t_pow *= t;
+    }
+    return result;
+}
+
 
 }; // namespace arena_core
