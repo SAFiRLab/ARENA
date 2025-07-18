@@ -15,7 +15,7 @@ namespace arena_core
  *
  * @tparam T The type of the control point 
  */
-template<typename T>
+template<typename T, int _Dim>
 class ControlPoint
 {
 public:
@@ -28,7 +28,7 @@ public:
      * @param a_weight The weight of the control point.
      * @param a_id The unique identifier for the control point.
      */
-    ControlPoint(const Eigen::Matrix<T, Eigen::Dynamic, 1>& a_values,
+    ControlPoint(const Eigen::Matrix<T, _Dim, 1>& a_values,
                  const unsigned int a_id = 0, const double a_weight = 1.0)
         : values_(std::move(a_values)), weight_(a_weight), id_(a_id)
     {}
@@ -68,7 +68,7 @@ public:
      * 
      * @param a_values The new values to set.
      */
-    void setValues(const Eigen::Matrix<T, Eigen::Dynamic, 1>& a_values)
+    void setValues(const Eigen::Matrix<T, _Dim, 1>& a_values)
     {
         if (a_values.rows() != values_.rows())
             throw std::invalid_argument("Values size does not match the dimension of the control point.");
@@ -99,28 +99,28 @@ public:
      * 
      * @return The id of the control point.
      */
-    unsigned int getId() const { return id_; }
+    unsigned int getId() const noexcept { return id_; }
 
     /**
      * @brief Get the weight of the control point.
      * 
      * @return The weight of the control point.
      */
-    double W() const { return weight_; }
+    double W() const noexcept { return weight_; }
 
     /**
      * @brief Get the dimension of the control point.
      * 
      * @return The dimension of the control point.
      */
-    unsigned int getDimension() const { return values_.rows(); }
+    unsigned int getDimension() const noexcept { return values_.rows(); }
 
     /**
      * @brief Get the values of the control point.
      * 
      * @return The values of the control point as an Eigen matrix.
      */
-    Eigen::Matrix<T, Eigen::Dynamic, 1> getValues() const { return values_; }
+    Eigen::Matrix<T, _Dim, 1> getValues() const noexcept { return values_; }
 
     /************* Operators overload *************/
     /**
@@ -152,16 +152,13 @@ public:
      */
     ControlPoint& operator=(const ControlPoint& other)
     {
-        if (this == &other)
-            return *this; // Handle self-assignment
-
         if (other.values_.rows() != values_.rows())
             throw std::invalid_argument("Cannot assign control point with different dimension.");
         
         if (this != &other)
         {
             id_ = other.id_;
-            values_ = std::move(other.values_);
+            values_ = other.values_;
             weight_ = other.weight_;
         }
         return *this;
@@ -194,7 +191,7 @@ public:
 private:
     
     /************* User-defined attributes *************/
-    Eigen::Matrix<T, Eigen::Dynamic, 1> values_; // Eigen Matrix of n values, where n is the dimension of the control point
+    Eigen::Matrix<T, _Dim, 1> values_; // Eigen Matrix of n values, where n is the dimension of the control point
     double weight_; // Weight of the control point, used in NURBS calculations
     unsigned int id_; // Unique identifier for the control point
 

@@ -50,19 +50,19 @@ public:
         Eigen::VectorXd p13(3);
         p13 << 12, 0, -6;
 
-        control_points_.push_back(arena_core::ControlPoint<double>(p1));
-        control_points_.push_back(arena_core::ControlPoint<double>(p2));
-        control_points_.push_back(arena_core::ControlPoint<double>(p3));
-        control_points_.push_back(arena_core::ControlPoint<double>(p4));
-        control_points_.push_back(arena_core::ControlPoint<double>(p5));
-        control_points_.push_back(arena_core::ControlPoint<double>(p6));
-        control_points_.push_back(arena_core::ControlPoint<double>(p7));
-        control_points_.push_back(arena_core::ControlPoint<double>(p8));
-        control_points_.push_back(arena_core::ControlPoint<double>(p9));
-        control_points_.push_back(arena_core::ControlPoint<double>(p10));
-        control_points_.push_back(arena_core::ControlPoint<double>(p11));
-        control_points_.push_back(arena_core::ControlPoint<double>(p12));
-        control_points_.push_back(arena_core::ControlPoint<double>(p13));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p1));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p2));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p3));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p4));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p5));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p6));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p7));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p8));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p9));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p10));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p11));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p12));
+        control_points_.push_back(arena_core::ControlPoint<double, 3>(p13));
 
         // Example weights
         control_points_[1].setW(5.0);
@@ -71,7 +71,7 @@ public:
 
         int degree = 5;
         sample_size_ = 50;
-        nurbs_ = std::make_shared<arena_core::Nurbs>(control_points_, sample_size_, degree);
+        nurbs_ = std::make_shared<arena_core::Nurbs<3>>(control_points_, sample_size_, degree);
 
         timer_ = this->create_wall_timer(500ms, std::bind(&NurbsVisualizerNode::publishAll, this));
         derivatives_timer_ = this->create_wall_timer(1000ms, std::bind(&NurbsVisualizerNode::publishDerivatives, this));
@@ -195,8 +195,8 @@ private:
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr control_points_pub_;
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::TimerBase::SharedPtr derivatives_timer_;
-    std::vector<arena_core::ControlPoint<double>> control_points_;
-    std::shared_ptr<arena_core::Nurbs> nurbs_;
+    std::vector<arena_core::ControlPoint<double, 3>> control_points_;
+    std::shared_ptr<arena_core::Nurbs<3>> nurbs_;
     int sample_size_;
 };
 
