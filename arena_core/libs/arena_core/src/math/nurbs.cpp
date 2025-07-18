@@ -1,6 +1,8 @@
+// Local
 #include "arena_core/math/nurbs.h"
 #include "arena_core/math/utils/linalg.h"
 
+// System
 #include <iostream>
 #include <algorithm>
 
@@ -8,12 +10,10 @@
 namespace arena_core
 {
 
-Nurbs::Nurbs(const std::vector<Eigen::VectorXd>& control_points, int sample_size,
-std::vector<double> weights, int degree)
-: control_points_(control_points), sample_size_(sample_size), weights_(weights),
-degree_(degree), dimension_(0), adequate_conf_(false)
+Nurbs::Nurbs(const std::vector<ControlPoint<double>>& control_points, int sample_size, int degree)
+: control_points_(control_points), sample_size_(sample_size), degree_(degree), adequate_conf_(false)
 {
-    initialize();
+    adequate_conf_ = initialize();
 }
 
 bool Nurbs::initialize()
@@ -24,115 +24,84 @@ bool Nurbs::initialize()
         return false;
     }
 
-    dimension_ = control_points_[0].size();
-
-    if (degree_ >= control_points_.size()) {
+    if (degree_ >= control_points_.size())
+    {
         std::cout << "You've got an inadequate configuration of curve degree VS number of control points on your hands"
                   << std::endl;
-        adequate_conf_ = false;
-        return adequate_conf_;
+        return false;
     }
-    adequate_conf_ = true;
 
-    if (control_points_.size() != weights_.size())
+    unsigned int dimension = control_points_[0].getDimension();
+    if (!std::all_of(control_points_.begin(), control_points_.end(),
+        [dimension](const auto& cp) { return cp.getDimension() == dimension; }))
     {
-        std::cout << "The amount of weights doesn't correspond the amount of control points" << std::endl;
-        weights_.clear();
-        adequate_conf_ = false;
-        return adequate_conf_;
+        std::cout << "All control points must have the same dimension." << std::endl;
+        return false;
     }
+    dimension_ = dimension;
 
     knot_vector_ = generateKnotVector();
     double start = knot_vector_[degree_];
     double stop = knot_vector_[knot_vector_.size() - (degree_ + 1)];
     parameters_space_ = linalg::linspace<double>(start, stop, sample_size_);
     spans_ = findSpans();
-    return adequate_conf_;
+    return true;
 }
 
 bool Nurbs::setDegree(int degree)
 {
+    adequate_conf_ = false;
     if (1 <= degree && degree <= 5)
     {
         degree_ = degree;
-        return initialize();
+        adequate_conf_ = initialize();
     }
     else
-    {
         std::cout << "Curve order needs to be in the interval [1, 5]" << std::endl;
-        return false;
-    }
+
+    return adequate_conf_;
 }
 
 bool Nurbs::setSampleSize(int sample_size)
 {
+    adequate_conf_ = false;
     if (0 < sample_size)
     {
         sample_size_ = sample_size;
-        return initialize();
+        adequate_conf_ = initialize();
     }
     else
         std::cout << "Sample size needs to be a positive non-zero number";
     
-    return false;
+    return adequate_conf_;
 }
 
-bool Nurbs::setControlPoints(const std::vector<Eigen::VectorXd>& control_points)
+bool Nurbs::setControlPoints(const std::vector<ControlPoint<double>>& control_points)
 {
-    if (control_points.size() != weights_.size())
+    adequate_conf_ = false;
+    if (!control_points.empty())
     {
-        std::cout << "The amount of weights doesn't correspond the amount of control points" << std::endl;
-        return false;
+        control_points_ = std::move(control_points);
+        adequate_conf_ = initialize();
     }
-
-    if (control_points.empty())
-    {
-        std::cout << "Set of control points can't be empty";
-        return false;
-    }
+    else
+        std::cout << "Set of control points can't be empty" << std::endl;
     
-    control_points_ = control_points;
-    return initialize();
+    return adequate_conf_;
 }
 
-bool Nurbs::setControlPoint(const Eigen::VectorXd& control_point, int index)
+bool Nurbs::setControlPoint(const ControlPoint<double>& control_point, int index)
 {
-    if (control_point.size() != dimension_)
-    {
-        std::cout << "The dimension of the control point doesn't correspond to the dimension of the other control points";
-        return false;
-    }
-
+    adequate_conf_ = false;
     if (0 <= index && index < control_points_.size())
     {
         control_points_[index] = control_point;
-        return initialize();
+        adequate_conf_ = initialize();
     }
     else
         std::cout << "The index: " << index << " needs to be above 0 and below " << control_points_.size() << std::endl;
 
-    return false;
-}
-
-bool Nurbs::setWeightedControlPoints(const std::vector<Eigen::VectorXd>& control_points, 
-                                     const std::vector<double>& weights)
-{
-    if (control_points.empty() || weights.empty())
-    {
-        std::cout << "Sets of control points or weights can't be empty";
-        return false;
-    }
-
-    if (control_points.size() != weights.size())
-    {
-        std::cout << "The amount of weights doesn't correspond the amount of control points" << std::endl;
-        return false;
-    }
-
-    control_points_.clear();
-    control_points_ = control_points;
-    weights_ = weights;
-    return initialize();
+    return adequate_conf_;
 }
 
 std::vector<double> Nurbs::generateKnotVector() const
@@ -143,15 +112,15 @@ std::vector<double> Nurbs::generateKnotVector() const
     std::vector<double> knot_vector(num_control_points + degree_ + 1, 0.0);
 
     // Set up the knots at the start and end to create a clamped curve
-    for (int i = 0; i <= degree_; i++) {
+    for (int i = 0; i <= degree_; i++)
+    {
         knot_vector[i] = 0.0;
         knot_vector[knot_vector.size() - (i + 1)] = 1.0;
     }
 
     // Generate the interior knots
-    for (int i = 1; i < num_segments - 1; i++) {
+    for (int i = 1; i < num_segments - 1; i++)
         knot_vector[i + degree_] = static_cast<double>(i) / (num_segments - 1);
-    }
 
     return knot_vector;
 }
@@ -182,11 +151,13 @@ void Nurbs::basisFunction(int span, double parameter, double* N) const
 
     N[0] = 1.0;
 
-    for (int j = 1; j <= degree_; j++) {
+    for (int j = 1; j <= degree_; j++)
+    {
         left[j] = parameter - knot_vector_[span + 1 - j];
         right[j] = knot_vector_[span + j] - parameter;
         double saved = 0.0;
-        for (int r = 0; r < j; r++) {
+        for (int r = 0; r < j; r++)
+        {
             double temp = N[r] / (right[r + 1] + left[j - r]);
             N[r] = saved + right[r + 1] * temp;
             saved = left[j - r] * temp;
@@ -310,9 +281,9 @@ Eigen::VectorXd* Nurbs::evaluate() const
     {
         std::vector<double> tmp_pt(dimension_ + 1, 0.0);
         for (int j = 0; j < dimension_; ++j)
-            tmp_pt[j] = control_points_[i][j] * double(weights_[i]);
+            tmp_pt[j] = control_points_[i][j] * double(control_points_[i].W());
 
-        tmp_pt[dimension_] = weights_[i];
+        tmp_pt[dimension_] = control_points_[i].W();
         weighted_control_points.push_back(tmp_pt);
     }
 
@@ -379,9 +350,9 @@ std::vector<std::vector<std::vector<double>>> Nurbs::derivatives(int order) cons
     {
         std::vector<double> tmp_pt(dimension_ + 1, 0.0);
         for (int j = 0; j < dimension_; ++j)
-            tmp_pt[j] = control_points_[i][j] * double(weights_[i]);
+            tmp_pt[j] = control_points_[i][j] * double(control_points_[i].W());
 
-        tmp_pt[dimension_] = weights_[i];
+        tmp_pt[dimension_] = control_points_[i].W();
         weighted_control_points.push_back(tmp_pt);
     }
     
