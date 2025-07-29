@@ -90,7 +90,9 @@ WORKDIR /home
 
 RUN git clone https://github.com/Dave-Poissant/pagmo2.git
 RUN /bin/bash -c "cd /home/pagmo2 && \
-    git checkout -b work_on_archipelago && \
+    git checkout -b work_on_archipelago origin/work_on_archipelago && \
+    git fetch && \
+    git pull && \
     mkdir build && \
     cd build && \
     cmake .. -DPAGMO_WITH_EIGEN3=ON -DCMAKE_BUILD_TYPE=Release && \
@@ -110,13 +112,6 @@ RUN /bin/bash -c "cd /home/fcl && \
         -DOCTOMAP_LIBRARY=/opt/ros/humble/lib/x86_64-linux-gnu/liboctomap.so && \
     make -j4 && \
     sudo make install"
-
-#RUN mkdir -p /home/dev_ws/src
-#COPY simoffroad/Sim_2_Off_Road_ROS2_Msg/ /home/dev_ws/src
-
-# ARENA's ROS Messages dependencies
-RUN apt-get update && apt-get install -y \
-    ros-humble-octomap-msgs
 
 # Build the custom message workspace
 RUN /bin/bash -c "source /opt/ros/humble/setup.sh && \

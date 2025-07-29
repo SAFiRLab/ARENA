@@ -751,6 +751,9 @@ void LinedroneTestNode::ARENAOptimization()
     int nb_of_generations = this->get_parameter("optimization.NSGA-II.generations").as_int();
     std::function<void(const pagmo::population&)> show_set_callback = std::bind(&LinedroneTestNode::publishSolutionSet, this, std::placeholders::_1);
     pagmo::algorithm nsga2{pagmo::nsga2(nb_of_generations, 0.95, 10.0, 0.01, 50.0, pagmo::random_device::next(), &show_set_callback)};
+    pagmo::vector_double adaptive_matrix = pagmo::vector_double(prob_linedrone.get_nf(), 0.0);
+    nsga2.set_adaptive_matrix(adaptive_matrix);
+
     pagmo::population pop_linedrone{prob_linedrone, population_size_};
     pop_linedrone.clear();
 
