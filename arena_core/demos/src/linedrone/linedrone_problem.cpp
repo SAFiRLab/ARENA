@@ -112,7 +112,7 @@ std::pair<vector_double, vector_double> linedrone_problem::get_bounds() const
  */
 std::string linedrone_problem::get_name() const
 {
-    return "NADILE";
+    return "LINEDRONE";
 }
 
 // Object serialization

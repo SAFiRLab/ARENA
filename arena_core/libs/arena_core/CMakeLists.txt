@@ -30,6 +30,17 @@ set(ARENA_CORE_PACKAGES_LIBRARIES
     Pagmo::pagmo
 )
 
+# Set OpenMP flags if OpenMP is found
+if(OpenMP_CXX_FOUND)
+    target_compile_options(${PROJECT_NAME}_arena_core 
+    PRIVATE ${OpenMP_CXX_FLAGS}
+    )
+    set(ARENA_CORE_PACKAGES_LIBRARIES
+        ${ARENA_CORE_PACKAGES_LIBRARIES} 
+        OpenMP::OpenMP_CXX
+    )
+endif()
+
 target_link_libraries(${PROJECT_NAME}_arena_core
     ${ARENA_CORE_PACKAGES_LIBRARIES}
 )

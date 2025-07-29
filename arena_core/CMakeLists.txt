@@ -17,6 +17,8 @@ find_package(yaml-cpp REQUIRED)
 find_package(Pagmo REQUIRED)
 find_package(PCL REQUIRED)
 find_package(Boost REQUIRED COMPONENTS serialization filesystem system)
+# Enable OpenMP if it's available
+find_package(OpenMP REQUIRED)
 
 
 find_package(fcl QUIET)

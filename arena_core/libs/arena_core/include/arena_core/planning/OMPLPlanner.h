@@ -34,7 +34,8 @@ struct IPlanningInitializer
 
     bool isInitialized() const
     {
-        return state_validity_checker_ != nullptr && optimization_objective_ != nullptr && planner_ != nullptr;
+        // optimization objective and cost-to-go heuristic can be null, but planner and state validity checker must be set
+        return state_validity_checker_ != nullptr && planner_ != nullptr;
     };
 
 }; // IPlanningInitializer
@@ -156,6 +157,22 @@ public:
         solving_timeout_ = a_timeout;
     };
 
+     /**
+     * @brief Set the bounds for the planning problem.
+     * @param a_lower A Eigen::VectorXd representing the lower bounds.
+     * @param a_upper A Eigen::VectorXd representing the upper bounds.
+     */
+    void setBounds(const Eigen::VectorXd& a_lower, const Eigen::VectorXd& a_upper)
+    {
+        assert(a_lower.size() == dim_ && a_upper.size() == dim_ && "OMPLPlanner::setBounds() -> Bounds size does not match problem dimensions.");
+        bounds_ = ompl::base::RealVectorBounds(dim_);
+        for (int i = 0; i < dim_; ++i)
+        {
+            bounds_.setLow(i, a_lower[i]);
+            bounds_.setHigh(i, a_upper[i]);
+        }
+    };
+
     /************* User-defined methods *************/
     /**
     * @brief Plan a path from start to goal.
@@ -190,22 +207,6 @@ private:
     * It sets up the OMPL SimpleSetup with the state space, optimization objective, and other parameters.
     */
    void initializePlanner();
-
-    /**
-     * @brief Set the bounds for the planning problem.
-     * @param a_lower A Eigen::VectorXd representing the lower bounds.
-     * @param a_upper A Eigen::VectorXd representing the upper bounds.
-     */
-    void defineBounds(const Eigen::VectorXd& a_lower, const Eigen::VectorXd& a_upper)
-    {
-        assert(a_lower.size() == dim_ && a_upper.size() == dim_ && "OMPLPlanner::setBounds() -> Bounds size does not match problem dimensions.");
-        bounds_ = ompl::base::RealVectorBounds(dim_);
-        for (int i = 0; i < dim_; ++i)
-        {
-            bounds_.setLow(i, a_lower[i]);
-            bounds_.setHigh(i, a_upper[i]);
-        }
-    };
 
     /************* User-defined attributes *************/
     Eigen::VectorXd goal_; ///< The planning goal.

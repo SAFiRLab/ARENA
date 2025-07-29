@@ -1,7 +1,5 @@
 #pragma once
 
-// Local
-#include "linedrone_navigation/pipeline_config.h"
 
 // System
 #include <unordered_map>
@@ -17,10 +15,80 @@
 #include <octomap/octomap.h>
 
 
-namespace linedrone_navigation
+namespace arena_core
+{
+struct OrientedBoundingBoxWrapper;
+}; // namespace arena_core
+
+namespace arena_demos
 {
 
-struct OrientedBoundingBoxWrapper;
+/**
+ * \brief Pipeline config container
+ */
+struct PipelineConfig
+{
+    // Drone configs
+    float drone_speed_;
+    float drone_acceleration_;
+    float drone_mass_;
+
+    struct DronePermanentPower
+    {
+        float pitch_;
+        float roll_;
+        float ascent_;
+        float descent_;
+
+        Eigen::VectorXd quadratic_surface_coefficients_;
+    } drone_permanent_power_;
+
+    // RRT configs
+    float rrt_rope_delta_;
+
+    // Nurbs configs
+    int sample_size_;
+
+    // Optimization configs
+    int population_size_;
+    int max_generations_;
+    float mutation_distribution_index_;
+    float crossover_probability_;
+    float crossover_distribution_index_;
+    float final_cost_time_;
+    float final_cost_security_;
+    float final_cost_energy_;
+
+    void parseConfig(std::string config_file_path);
+    void solveQuadraticSurfaceCoefficients()
+    {
+        Eigen::MatrixXd A(6, 6);
+        Eigen::VectorXd b(6);
+    
+        // We define the A matrix according to the quadratic surface equation
+        // 0 = a*x^2 + b*y^2 + c*z^2 + d*x*y + e*x*z + f*y*z + g*x + h*y + j*z + k
+        // The way we take our permanenet regime data, we can eliminate the d, e and f coefficients
+        // We then set k = 1, as we are only interested in the coefficients of the quadratic surface and this is a scaling factor
+        // So the equation becomes 0 = a*x^2 + b*y^2 + c*z^2 + g*x + h*y + j*z + 1
+        // We then have the following system of equations:
+    
+        // A, B, C, G, H, J are the coefficients of the quadratic surface equation
+        // Using points (drone_permanent_power_.roll_, 0, 0), (0, drone_permanent_power_.pitch_, 0), (0, 0, drone_permanent_power_.ascent_)
+        // (-drone_permanent_power_.roll_, 0, 0), (0, -drone_permanent_power_.pitch_, 0), (0, 0, -drone_permanent_power_.descent_)
+    
+        A << 0, pow(drone_permanent_power_.pitch_, 2.0), 0, 0, drone_permanent_power_.pitch_, 0,
+             pow(drone_permanent_power_.roll_, 2.0), 0, 0, drone_permanent_power_.roll_, 0, 0,
+             0, 0, pow(drone_permanent_power_.ascent_, 2.0), 0, 0, drone_permanent_power_.ascent_,
+             0, pow(drone_permanent_power_.pitch_, 2.0), 0, 0, -drone_permanent_power_.pitch_, 0,
+             pow(drone_permanent_power_.roll_, 2.0), 0, 0, -drone_permanent_power_.roll_, 0, 0,
+             0, 0, pow(drone_permanent_power_.descent_, 2.0), 0, 0, -drone_permanent_power_.descent_;
+    
+        b << -1, -1, -1, -1, -1, -1;
+    
+        drone_permanent_power_.quadratic_surface_coefficients_ = A.colPivHouseholderQr().solve(b);
+    }    
+};
+
 
 struct EvalEnergyOutput
 {
@@ -66,17 +134,17 @@ struct EvalNurbsOutput
 
 //EvalCurvatureOutput getEvalCurvature(std::vector<std::vector<std::vector<double>>> ck_matrix);
 EvalNurbsOutput getEvalNurbs(Eigen::Vector3d* curve_points, octomap::ColorOcTree* color_octree, 
-                             int sample_size, OrientedBoundingBoxWrapper* obb = nullptr);
+                             int sample_size, arena_core::OrientedBoundingBoxWrapper* obb = nullptr);
 EvalNurbsOutput getEvalNurbs(Eigen::VectorXd* curve_points, octomap::ColorOcTree* color_octree, 
                              int sample_size, const PipelineConfig& pipeline_config, 
-                             std::unordered_map<std::string, OrientedBoundingBoxWrapper>& obb);
+                             const std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>& obb);
 
 void evalTimeCost(double distance, double velocity, double& time_output);
 void evalInsertionCost(Eigen::Vector3d point1, octomap::ColorOcTree* color_octree, 
-                       std::unordered_map<std::string, OrientedBoundingBoxWrapper>& obb,
+                       const std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>& obb,
                        EvalSafetyOutput& output);
 void evalCollisionCost(Eigen::Vector3d point1, Eigen::Vector3d point2, octomap::ColorOcTree* color_octree, 
-                       std::unordered_map<std::string, OrientedBoundingBoxWrapper>& obb,
+                       const std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>& obb,
                        EvalSafetyOutput& output);
 void evalSmoothnessCost(Eigen::Vector3d point_i_m_1, Eigen::Vector3d point_i, Eigen::Vector3d point_i_p_1, 
                          Eigen::Vector3d point_i_p_2, Eigen::Vector3d point_i_p_3,
@@ -85,5 +153,5 @@ void evalSmoothnessCost(Eigen::Vector3d point_i_m_1, Eigen::Vector3d point_i, Ei
 void evalEnergyCost(Eigen::Vector3d point_i_m_1, Eigen::Vector3d point_i, Eigen::Vector3d point_i_p_1,
                     double velocity_i, double velocity_i_p_1, PipelineConfig pipeline_config, EvalEnergyOutput& output);
 
-}; // namespace linedrone_navigation
+}; // namespace arena_demos
 

@@ -1,15 +1,15 @@
-#include "linedrone_navigation/math/nurbs_analyzer.h"
+#include "linedrone/nurbs_analyzer_old.h"
 
 // LineDrone_navigation
-#include "linedrone_navigation/math/utils/linalg.h"
-#include "linedrone_navigation/geometry/obb_wrapper.h"
+#include "arena_core/math/utils/linalg.h"
+#include "arena_core/geometry/oriented_bounding_box_wrapper.h"
 
 // System
 #include <limits>
 #include <math.h>
 
 
-namespace linedrone_navigation
+namespace arena_demos
 {
 
 /*EvalEnergyOutput getEvalCurvature(std::vector<std::vector<std::vector<double>>> ck_matrix)
@@ -66,7 +66,7 @@ void evalTimeCost(double distance, double velocity, double& time_output)
     time_output += distance / velocity;
 }
 
-void evalInsertionCost(Eigen::Vector3d point1, octomap::ColorOcTree* color_octree, std::unordered_map<std::string, OrientedBoundingBoxWrapper>& obb,
+void evalInsertionCost(Eigen::Vector3d point1, octomap::ColorOcTree* color_octree, const std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>& obb,
                        EvalSafetyOutput& output)
 {
     if (!obb.empty())
@@ -98,7 +98,7 @@ void evalInsertionCost(Eigen::Vector3d point1, octomap::ColorOcTree* color_octre
     }
 }
 
-void evalCollisionCost(Eigen::Vector3d point1, Eigen::Vector3d point2, octomap::ColorOcTree* color_octree, std::unordered_map<std::string, OrientedBoundingBoxWrapper>& obb,
+void evalCollisionCost(Eigen::Vector3d point1, Eigen::Vector3d point2, octomap::ColorOcTree* color_octree, const std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>& obb,
                        EvalSafetyOutput& output)
 {
     double tree_depth = color_octree->getTreeDepth();
@@ -258,7 +258,7 @@ void evalEnergyCost(Eigen::Vector3d point_i_m_1, Eigen::Vector3d point_i, Eigen:
 }
 
 EvalNurbsOutput getEvalNurbs(Eigen::VectorXd* curve_points, octomap::ColorOcTree* color_octree, 
-                             int sample_size, const PipelineConfig& pipeline_config, std::unordered_map<std::string, OrientedBoundingBoxWrapper>& obb)
+                             int sample_size, const PipelineConfig& pipeline_config, const std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>& obb)
 {
     EvalNurbsOutput eval_nurbs;
 
@@ -360,14 +360,14 @@ EvalNurbsOutput getEvalNurbs(Eigen::VectorXd* curve_points, octomap::ColorOcTree
 
 // These next functions are just for backward compatibility
 EvalNurbsOutput getEvalNurbs(Eigen::Vector3d* curve_points, octomap::ColorOcTree* color_octree, 
-                             int sample_size, OrientedBoundingBoxWrapper* obb)
+                             int sample_size, arena_core::OrientedBoundingBoxWrapper* obb)
 {
     // Empty
     return EvalNurbsOutput();
 }
 
 EvalNurbsOutput getEvalNurbs(Eigen::Vector2d* curve_points, octomap::ColorOcTree* color_octree, 
-                             int sample_size, const PipelineConfig& pipeline_config, OrientedBoundingBoxWrapper* obb)
+                             int sample_size, const PipelineConfig& pipeline_config, arena_core::OrientedBoundingBoxWrapper* obb)
 {
     // Empty
     return EvalNurbsOutput();

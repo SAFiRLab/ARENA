@@ -42,71 +42,50 @@ public:
      * 
      * @return A vector of evaluated points along the NURBS curve.
      */
-    Eigen::VectorXd* evaluate() const
+    Eigen::MatrixXd evaluate() const
     {
-        double** crvpt_w = new double*[parameters_space_.size()];
-        Eigen::VectorXd* eval_points = new Eigen::VectorXd[parameters_space_.size()];
-    
-        std::vector<std::vector<double>> weighted_control_points;
-        for (int i = 0; i < control_points_.size(); ++i)
+        // Early exit on invalid configuration
+        if (!adequate_conf_)
         {
-            std::vector<double> tmp_pt(dimension_ + 1, 0.0);
+            std::cerr << "Invalid NURBS configuration: degree vs number of control points." << std::endl;
+            return Eigen::MatrixXd();  // Return empty matrix
+        }
+
+        const size_t N = parameters_space_.size();       // number of sample points
+        const size_t dim_w = dimension_ + 1;              // spatial dim + weight
+        const size_t num_ctrl_pts = control_points_.size();
+
+        // Precompute weighted control points as matrix [num_ctrl_pts x dim+1]
+        Eigen::MatrixXd weighted_cp(num_ctrl_pts, dim_w);
+        for (size_t i = 0; i < num_ctrl_pts; ++i) {
             for (int j = 0; j < dimension_; ++j)
-                tmp_pt[j] = control_points_[i][j] * double(control_points_[i].W());
-    
-            tmp_pt[dimension_] = control_points_[i].W();
-            weighted_control_points.push_back(tmp_pt);
+                weighted_cp(i, j) = control_points_[i][j] * control_points_[i].W();
+            weighted_cp(i, dimension_) = control_points_[i].W();  // weight
         }
-    
-        if (adequate_conf_)
+
+        // Output: one row per sample, each with `dimension_` values
+        Eigen::MatrixXd eval_points(dimension_, N);
+
+        // Evaluate basis functions and weighted sum for each sample
+        for (size_t idx = 0; idx < N; ++idx)
         {
-            double** basis = new double*[spans_.size()];
-            basisFunctions(basis);
-            for (size_t idx = 0; idx < parameters_space_.size(); idx++)
-            {
-                double* crvpt = new double[dimension_ + 1];
-                for (int i = 0; i <= dimension_; i++)
-                    crvpt[i] = 0.0;
-                
-                for (int i = 0; i <= degree_; i++)
-                {
-                    int index = spans_[idx] - degree_ + i;
-                    for (size_t j = 0; j < (dimension_ + 1); j++)
-                        crvpt[j] += basis[idx][i] * weighted_control_points[index][j];
-                }
-                crvpt_w[idx] = crvpt;
+            int span = spans_[idx];
+            std::vector<double> basis(degree_ + 1, 0.0);
+            basisFunction(span, parameters_space_[idx], basis.data());
+
+            // Weighted combination
+            Eigen::RowVectorXd crvpt_w = Eigen::RowVectorXd::Zero(dim_w);
+            for (int i = 0; i <= degree_; ++i) {
+                int cp_idx = span - degree_ + i;
+                crvpt_w += basis[i] * weighted_cp.row(cp_idx);
             }
-    
-            for (int i = 0; i < parameters_space_.size(); i++)
-            {
-                double* pt = crvpt_w[i];
-                Eigen::VectorXd cpt(dimension_);
-                for (int j = 0; j < dimension_; j++)
-                    cpt[j] = pt[j] / pt[dimension_];
-                eval_points[i] = cpt;
-                delete[] pt;
-            }
-    
-            // Free memory for basis
-            for (size_t i = 0; i < spans_.size(); ++i)
-            {
-                delete[] basis[i];
-            }
-            delete[] basis;
-    
-            // Free memory for crvpt_w
-            delete[] crvpt_w;
+
+            // Project to Euclidean space by dividing by weight
+            eval_points.col(idx) = crvpt_w.head(dimension_) / crvpt_w(dimension_);
         }
-        else
-        {
-            std::cout << "You've got an inadequate configuration of curve degree VS number of control points on your hands"
-                      << std::endl;
-            delete[] eval_points;  // Free memory for eval_points in case of inadequate configuration
-            eval_points = nullptr;  // Return nullptr in case of error
-        }
-        
+
         return eval_points;
-    };
+    }
 
     /**
      * @brief Evaluate the NURBS curve at the specified parameters and return the derivatives.
@@ -150,22 +129,26 @@ public:
 
     /**
      * @brief Fit a polynomial curve to the given points.
-     * 
-     * @param a_points The points to fit the polynomial curve to.
+     *
+     * @param a_points The points to fit the polynomial curve to. Shape: (D x N)
      * @return The coefficients of the fitted polynomial curve.
+     *         Shape: D x (degree + 1)
      */
-    Eigen::MatrixXd fitPolynomialCurve(Eigen::VectorXd* a_points)
+    Eigen::MatrixXd fitPolynomialCurve(const Eigen::MatrixXd& a_points)
     {
-        int degree = 15;  // Degree of the polynomial
-        if (!adequate_conf_)
+        const int degree = 15;
+
+        const int D = a_points.rows();  // number of dimensions (e.g., 2D, 3D)
+        const int N = a_points.cols();  // number of points
+
+        if (N <= degree)
             throw std::runtime_error("Number of points must be greater than polynomial degree.");
-    
-        const int D = a_points[0].size();  // Dimensionality of the data
-        Eigen::VectorXd t = estimateParamByArcLength(a_points);
-    
-        // Create Vandermonde matrix V (N x (degree+1))
-        Eigen::MatrixXd V(sample_size_, degree + 1);
-        for (int i = 0; i < sample_size_; ++i)
+
+        Eigen::VectorXd t = estimateParamByArcLength(a_points);  // size N
+
+        // Construct Vandermonde matrix V (N x (degree+1))
+        Eigen::MatrixXd V(N, degree + 1);
+        for (int i = 0; i < N; ++i)
         {
             double val = 1.0;
             for (int j = 0; j <= degree; ++j)
@@ -174,38 +157,33 @@ public:
                 val *= t(i);
             }
         }
-    
-        // Create Y matrix (N x D) from input curve points
-        Eigen::MatrixXd Y(sample_size_, D);
-        for (int i = 0; i < sample_size_; ++i)
-            Y.row(i) = a_points[i].transpose();
-    
-        // Solve for coefficients using QR decomposition: minimize ||V * C - Y||
-        // Result: C is (degree+1) x D, transpose to get (D x degree+1)
-        Eigen::MatrixXd C = V.colPivHouseholderQr().solve(Y);
-    
-        return C.transpose();  // Each row corresponds to one dimension (e.g., x(t), y(t), z(t))
-    };
+
+        // Solve for coefficients C: (degree+1 x D)
+        Eigen::MatrixXd C = V.colPivHouseholderQr().solve(a_points.transpose());
+
+        return C.transpose();  // final shape: D x (degree+1)
+    }
 
     /**
      * @brief Estimate parameter values by arc length.
-     * 
-     * @param a_points The points to estimate parameters for.
-     * @return A vector of estimated parameters.
+     *
+     * @param a_points The points to estimate parameters for. Shape: (D x N)
+     * @return A vector of estimated parameters (normalized arc lengths), size N.
      */
-    Eigen::VectorXd estimateParamByArcLength(const Eigen::VectorXd* a_points) const
+    Eigen::VectorXd estimateParamByArcLength(const Eigen::MatrixXd& a_points) const
     {
-        int N = sample_size_;
+        const int N = a_points.cols();
         Eigen::VectorXd t(N);
         t(0) = 0.0;
-    
+
         for (int i = 1; i < N; ++i)
-            t(i) = t(i-1) + (a_points[i] - a_points[i-1]).norm();
-    
-        // Optional: normalize to [0, 1]
-        t /= t(N-1);
+            t(i) = t(i - 1) + (a_points.col(i) - a_points.col(i - 1)).norm();
+
+        if (t(N - 1) > 0.0)
+            t /= t(N - 1);  // normalize to [0, 1]
+
         return t;
-    };
+    }
 
     /**
      * @brief Evaluate a polynomial at a given parameter.

@@ -30,6 +30,13 @@ void OMPLPlanner::initializePlanner()
     assert(dim_ > 0 && "OMPLPlanner::initializePlanner() -> Problem dimensions must be set before initializing the planner.");
     assert(bounds_.low.size() == dim_ && bounds_.high.size() == dim_ && "OMPLPlanner::initializePlanner() -> Bounds size must match problem dimensions.");
 
+    int fallback_idx = 0;
+    while (getStateSpace()->getDimension() < dim_ && fallback_idx < dim_)
+    {
+        getStateSpace()->as<ompl::base::RealVectorStateSpace>()->addDimension();
+        fallback_idx++;
+    }
+
     try
     {
         bounds_.check();
@@ -45,10 +52,16 @@ void OMPLPlanner::initializePlanner()
     setStateValidityChecker(initializer_->state_validity_checker_);
 
     // Create the optimization objective
-    auto objective = initializer_->optimization_objective_;
-    objective->setCostToGoHeuristic(initializer_->cost_to_go_heuristic_);
-    setOptimizationObjective(objective);
-
+    if (initializer_->optimization_objective_)
+    {
+        auto objective = initializer_->optimization_objective_;
+        if (!initializer_->cost_to_go_heuristic_)
+            throw std::runtime_error("OMPLPlanner::initializePlanner() -> Cost-to-go heuristic must be set if optimization objective is provided.");
+        
+        objective->setCostToGoHeuristic(initializer_->cost_to_go_heuristic_);
+        setOptimizationObjective(objective);
+    }
+    
     // Create a planner for the defined state space
     setPlanner(initializer_->planner_);
 }
@@ -85,8 +98,22 @@ ompl::base::PlannerStatus OMPLPlanner::plan()
 
     setStartAndGoalStates(start_state, goal_state);
 
+    clear();
     // Perform setup steps
     setup();
+
+    // DEBUG
+    auto si = getSpaceInformation();
+    auto sampler = si->allocValidStateSampler();
+    int valid_count = 0;
+    for (int i = 0; i < 1000; ++i) {
+        ompl::base::State *state = si->allocState();
+        sampler->sample(state);
+        if (si->isValid(state)) valid_count++;
+        si->freeState(state);
+    }
+    std::cout << "Valid samples out of 1000: " << valid_count << std::endl;
+
 
     // Solve the planning problem
     ompl::base::PlannerStatus status = getPlanner()->solve(solving_timeout_);
