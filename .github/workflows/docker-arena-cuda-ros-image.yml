@@ -34,8 +34,10 @@ jobs:
   
     - name: Tag the image
       run: |
-        docker tag arena-cuda-ros ghcr.io/${{ github.repository }}/arena-cuda-ros
+        IMAGE_NAME=$(echo "ghcr.io/${{ github.repository }}/arena-cuda-ros" | tr '[:upper:]' '[:lower:]')
+        docker tag arena-cuda-ros "$IMAGE_NAME"
   
     - name: Push image
       run: |
-        docker push ghcr.io/${{ github.repository }}/arena-cuda-ros
+        IMAGE_NAME=$(echo "ghcr.io/${{ github.repository }}/arena-cuda-ros" | tr '[:upper:]' '[:lower:]')
+        docker push "$IMAGE_NAME"
