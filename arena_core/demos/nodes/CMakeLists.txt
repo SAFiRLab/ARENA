@@ -42,6 +42,7 @@ ament_target_dependencies(linedrone_test_node
     tf2
     std_msgs
     geometry_msgs
+    octomap_msgs
 )
 
 install(TARGETS

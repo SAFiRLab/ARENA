@@ -30,9 +30,21 @@ class ARENACostmapNode : public rclcpp::Node
 
 public:
 
-    ARENACostmapNode(const std::string& node_name);
+    ARENACostmapNode(rclcpp::NodeOptions options = rclcpp::NodeOptions());
 
+    /** @brief Update the parameters of the costmap node.
+     * 
+     * This function updates the parameters of the costmap node based on the current configuration.
+     * 
+     */
     void updateParams();
+
+    /** @brief Method to print the status of the costmap node.
+     * 
+     * This function prints the current status of the costmap node, including the resolution,
+     * frame ID, and whether the costmap is initialized.
+     *
+     */
     void printStatus();
 
     // Getters
@@ -50,8 +62,9 @@ private:
     // Publishers
     rclcpp::Publisher<octomap_msgs::msg::Octomap>::SharedPtr octomap_pub_;
     rclcpp::Publisher<octomap_msgs::msg::Octomap>::SharedPtr color_octomap_pub_;
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr inflated_octomap_marker_pub_;
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr color_octomap_marker_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr inflated_octomap_marker_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr color_octomap_marker_pub_;
+
 
     // Timers
     rclcpp::TimerBase::SharedPtr timer_;
@@ -64,8 +77,14 @@ private:
     void colorOctomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg);
     void timerCallback();
 
+    // User-defined methods
+    void publishInflatedOctomap(const std::shared_ptr<octomap::OcTree> octree);
+    void publishColorOctomap(const std::shared_ptr<octomap::ColorOcTree> octree);
+
     // User-defined attributes
     std::unique_ptr<Costmap3D> costmap_3d_;
+    bool has_loaded_bt_file_ = false;
+    std::shared_ptr<octomap::OcTree> loaded_octree_;
 
 }; // class ARENACostmapNode
 
@@ -74,9 +93,10 @@ void ARENACostmapNode::octreeCallback(const octomap_msgs::msg::Octomap::SharedPt
 {
     RCLCPP_INFO(this->get_logger(), "Received octomap message");
     rclcpp::Time begin = this->get_clock()->now();
-    auto octree = dynamic_cast<octomap::OcTree*>(octomap_msgs::binaryMsgToMap(*msg));
+    auto octree = std::dynamic_pointer_cast<octomap::OcTree>(std::shared_ptr<octomap::AbstractOcTree>(octomap_msgs::fullMsgToMap(*msg)));
 
-    if (!octree) {
+    if (!octree)
+    {
         RCLCPP_WARN(this->get_logger(), "Received non-OcTree message, skipping");
         return;
     }
@@ -101,9 +121,10 @@ void ARENACostmapNode::octreeCallback(const octomap_msgs::msg::Octomap::SharedPt
 
 void ARENACostmapNode::inflatedOctomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg)
 {
-    RCLCPP_INFO(this->get_logger(), "Received inflated octomap message");
-
-    auto octree = dynamic_cast<octomap::OcTree*>(octomap_msgs::fullMsgToMap(*msg));
+    if (has_loaded_bt_file_)
+        return;
+    
+    auto octree = std::dynamic_pointer_cast<octomap::OcTree>(std::shared_ptr<octomap::AbstractOcTree>(octomap_msgs::binaryMsgToMap(*msg)));
 
     if (!octree)
     {
@@ -111,11 +132,19 @@ void ARENACostmapNode::inflatedOctomapCallback(const octomap_msgs::msg::Octomap:
         return;
     }
 
+    publishInflatedOctomap(octree);
+}
+
+
+void ARENACostmapNode::publishInflatedOctomap(const std::shared_ptr<octomap::OcTree> octree)
+{
+    if (!octree)
+        return;
+    
     // Publish the inflated octomap as a marker array to visualize it
-    visualization_msgs::msg::MarkerArray marker_array;
     visualization_msgs::msg::Marker marker;
 
-    marker.header.frame_id = msg->header.frame_id;
+    marker.header.frame_id = "map";
     marker.header.stamp = this->get_clock()->now();
     marker.ns = "inflated_octomap";
     marker.id = 0;
@@ -132,12 +161,6 @@ void ARENACostmapNode::inflatedOctomapCallback(const octomap_msgs::msg::Octomap:
     {
         if (octree->isNodeOccupied(*it))
         {
-            /*octomap::point3d center = it.getCoordinate();
-            geometry_msgs::msg::Point p;
-            p.x = center.x();
-            p.y = center.y();
-            p.z = center.z();
-            marker.points.push_back(p);*/
             geometry_msgs::msg::Point p;
             p.x = it.getX();
             p.y = it.getY();
@@ -145,30 +168,43 @@ void ARENACostmapNode::inflatedOctomapCallback(const octomap_msgs::msg::Octomap:
             marker.points.push_back(p);
         }
     }
-    marker_array.markers.push_back(marker);
-    inflated_octomap_marker_pub_->publish(marker_array);
+    inflated_octomap_marker_pub_->publish(marker);
 
-    delete octree; // Clean up the octree after processing
+    // Publish octomap as a message
+    octomap_msgs::msg::Octomap octomap_msg;
+    octomap_msg.header.frame_id = "map";
+    octomap_msg.header.stamp = this->get_clock()->now();
+    octomap_msgs::fullMapToMsg(*octree, octomap_msg);
+    octomap_pub_->publish(octomap_msg);
 }
 
 
 void ARENACostmapNode::colorOctomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg)
 {
-    RCLCPP_INFO(this->get_logger(), "Received color octomap message");
-
-    auto octree = dynamic_cast<octomap::ColorOcTree*>(octomap_msgs::fullMsgToMap(*msg));
+    if (has_loaded_bt_file_)
+        return;
+    
+    auto octree = std::dynamic_pointer_cast<octomap::ColorOcTree>(std::shared_ptr<octomap::AbstractOcTree>(octomap_msgs::binaryMsgToMap(*msg)));
 
     if (!octree)
     {
         RCLCPP_WARN(this->get_logger(), "Received non-ColorOcTree message, skipping");
         return;
     }
-    // Publish the color octomap as a marker array to visualize it
 
-    visualization_msgs::msg::MarkerArray marker_array;
+    publishColorOctomap(octree);
+}
+
+
+void ARENACostmapNode::publishColorOctomap(const std::shared_ptr<octomap::ColorOcTree> octree)
+{
+    if (!octree)
+        return;
+
+    // Publish the color octomap as a marker array to visualize it
     visualization_msgs::msg::Marker marker;
 
-    marker.header.frame_id = msg->header.frame_id;
+    marker.header.frame_id = "map";
     marker.header.stamp = this->get_clock()->now();
     marker.ns = "color_octomap";
     marker.id = 0;
@@ -201,15 +237,30 @@ void ARENACostmapNode::colorOctomapCallback(const octomap_msgs::msg::Octomap::Sh
         }
     }
 
-    marker_array.markers.push_back(marker);
-    color_octomap_marker_pub_->publish(marker_array);
+    color_octomap_marker_pub_->publish(marker);
 
-    delete octree; // Clean up the octree after processing
+    // Publish color octomap as a message
+    octomap_msgs::msg::Octomap octomap_msg;
+    octomap_msg.header.frame_id = "map";
+    octomap_msg.header.stamp = this->get_clock()->now();
+    octomap_msgs::fullMapToMsg(*octree, octomap_msg);
+    color_octomap_pub_->publish(octomap_msg);
 }
 
 
 void ARENACostmapNode::timerCallback()
 {
+    // Re-publish loaded octomap if present
+    if (has_loaded_bt_file_ && loaded_octree_)
+    {
+        if (!costmap_3d_->getOctree())
+            costmap_3d_->setOctree(loaded_octree_);
+
+        publishInflatedOctomap(costmap_3d_->getOctree());
+        publishColorOctomap(costmap_3d_->getColorOctree());
+        RCLCPP_INFO(this->get_logger(), "Re-published loaded octomap from .bt file");
+    }
+
     updateParams();
     printStatus();
 }
@@ -252,31 +303,42 @@ void ARENACostmapNode::printStatus()
 }
 
 
-ARENACostmapNode::ARENACostmapNode(const std::string& node_name)
-: Node(node_name), costmap_3d_(std::make_unique<Costmap3D>())
+ARENACostmapNode::ARENACostmapNode(rclcpp::NodeOptions options)
+: Node("costmap_3D_node", options), costmap_3d_(std::make_unique<Costmap3D>())
 {
-    using std::placeholders::_1;
-
     // Parameters
-    this->declare_parameter("navigation.3d.inflation_radius", costmap_3d_->getInflationRadius());
-    this->declare_parameter("navigation.3d.obstacle_influence_distance.min", costmap_3d_->getMinInfluenceRadius());
-    this->declare_parameter("navigation.3d.obstacle_influence_distance.max", costmap_3d_->getMaxInfluenceRadius());
-
     costmap_3d_->setInflationRadius(this->get_parameter("navigation.3d.inflation_radius").as_double());
     costmap_3d_->setMinInfluenceRadius(this->get_parameter("navigation.3d.obstacle_influence_distance.min").as_double());
     costmap_3d_->setMaxInfluenceRadius(this->get_parameter("navigation.3d.obstacle_influence_distance.max").as_double());
+    std::string bt_file_path = this->get_parameter("saved_map.bt_file").as_string();
+    
+    if (!bt_file_path.empty())
+    {
+        RCLCPP_INFO(this->get_logger(), "Loading .bt file: %s", bt_file_path.c_str());
+        loaded_octree_ = std::make_shared<octomap::OcTree>(1.0); // resolution will be overridden by file
+        if (loaded_octree_->readBinary(bt_file_path))
+        {
+            has_loaded_bt_file_ = true;
+        }
+        else
+        {
+            loaded_octree_ = nullptr;
+            RCLCPP_WARN(this->get_logger(), "Failed to load the specified .bt file: %s", bt_file_path.c_str());
+        }
+    }
 
     // Subscribers
+    using std::placeholders::_1;
     octree_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/octomap_binary", 10, std::bind(&ARENACostmapNode::octreeCallback, this, _1));
     inflated_octomap_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/navigation/inflated_octomap/full", 10, std::bind(&ARENACostmapNode::inflatedOctomapCallback, this, _1));
     color_octomap_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/navigation/sdf_octomap/full", 10, std::bind(&ARENACostmapNode::colorOctomapCallback, this, _1));
 
-
     // Publishers
     octomap_pub_ = this->create_publisher<octomap_msgs::msg::Octomap>("/navigation/inflated_octomap/full", 10);
     color_octomap_pub_ = this->create_publisher<octomap_msgs::msg::Octomap>("/navigation/sdf_octomap/full", 10);
-    inflated_octomap_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/navigation/inflated_octomap/viz", 10);
-    color_octomap_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/navigation/sdf_octomap/viz", 10);
+
+    inflated_octomap_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/navigation/inflated_octomap/viz", 10);
+    color_octomap_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/navigation/sdf_octomap/viz", 10);
 
     // Timers
     loop_duration_ = this->get_clock()->now();
@@ -290,9 +352,9 @@ int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
 
-    auto node = std::make_shared<arena_core::ARENACostmapNode>("costmap_3d_node");
-
-    rclcpp::spin(node);
+    rclcpp::NodeOptions options;
+    options.allow_undeclared_parameters(true).automatically_declare_parameters_from_overrides(true);
+    rclcpp::spin(std::make_shared<arena_core::ARENACostmapNode>(options));
     rclcpp::shutdown();
     
     return 0;

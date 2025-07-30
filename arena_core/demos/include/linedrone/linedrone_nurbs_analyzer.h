@@ -160,6 +160,18 @@ public:
      */
     void eval(const Eigen::MatrixXd& a_curve_points, arena_core::EvalNurbsOutput& a_output) final override;
 
+    /************* Setters **************/
+    void setColorOctree(octomap::ColorOcTree* a_color_octree)
+    {
+        if (!a_color_octree)
+        {
+            std::cerr << "LinedroneNurbsAnalyzer::setColorOctree => Color octree is null." << std::endl;
+            return;
+        }
+        
+        color_octree_ = a_color_octree;
+    }
+
 private:
 
     /************* User-defined methods *************/

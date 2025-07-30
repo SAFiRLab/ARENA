@@ -4,6 +4,8 @@
 #include "visualization_msgs/msg/marker_array.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "octomap_msgs/msg/octomap.hpp"
+#include "octomap_msgs/conversions.h"
 
 // Local
 #include "arena_core/math/nurbs.h"
@@ -114,12 +116,6 @@ private:
     rclcpp::TimerBase::SharedPtr octomap_timer_;
 
     // ROS Timers Private Callbacks
-    /** @brief Callback to publish the color octree as a visualization marker.
-     * 
-     * This function publishes the color octree as a visualization marker in the ROS environment.
-     */
-    void publishColorOctree();
-
     /** @brief Callback to publish the arena path as a visualization marker.
      * 
      * This function publishes the arena path as a visualization marker in the ROS environment.
@@ -139,7 +135,6 @@ private:
     void publishOMPLPlannerPaths();
 
     // ROS Publishers
-    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr color_octree_pub_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr arena_control_points_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr arena_path_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr ompl_planner_pub_;
@@ -148,6 +143,8 @@ private:
     // ROS Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr goal_pose_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr planning_activation_sub_;
+    rclcpp::Subscription<octomap_msgs::msg::Octomap>::SharedPtr inflated_octomap_sub_;
+    rclcpp::Subscription<octomap_msgs::msg::Octomap>::SharedPtr color_octomap_sub_;
 
     // ROS namespace
     std::string ros_namespace_ = "linedrone_test_node";
@@ -165,13 +162,24 @@ private:
      */
     void planningActivationCallback(const std_msgs::msg::Bool::SharedPtr msg);
 
+    /** @brief Callback for the inflated octomap subscription.
+     * This function is called when a new inflated octomap is received.
+     * @param msg The message containing the inflated octomap.
+     */
+    void inflatedOctomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg);
+
+    /** @brief Callback for the color octomap subscription.
+     * This function is called when a new color octomap is received.
+     * @param msg The message containing the color octomap.
+     */
+    void colorOctreeCallback(const octomap_msgs::msg::Octomap::SharedPtr msg);
+
 
     /****************** User-Defined Attributes *******************/
     arena_demos::LinedroneNurbsAnalyzerConfig linedrone_config;
     arena_core::EvalNurbsOutput linedrone_output_;
     std::shared_ptr<arena_demos::LinedroneNurbsAnalyzer> linedrone_nurbs_analyzer_;
     std::shared_ptr<octomap::ColorOcTree> color_octree_;
-    std::shared_ptr<octomap::OcTree> octree_;
     std::shared_ptr<arena_core::Nurbs<4>> nurbs_;
     std::shared_ptr<Eigen::MatrixXd> arena_path_;
     std::string map_file_path_ = "/home/dev_ws/src/arena_core/demos/ressources/saved_octomaps/CL_map_res_50cm.bt";
@@ -207,46 +215,38 @@ void LinedroneTestNode::planningActivationCallback(const std_msgs::msg::Bool::Sh
     planning_goal_.goal_sent_ = false;
 }
 
-// ROS publishers implementations
-void LinedroneTestNode::publishColorOctree()
+void LinedroneTestNode::inflatedOctomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg)
 {
-    visualization_msgs::msg::Marker octree_marker;
-    octree_marker.header.frame_id = "map";
-    octree_marker.header.stamp = this->now();
-    octree_marker.ns = "octomap";
-    octree_marker.id = 2;
-    octree_marker.type = visualization_msgs::msg::Marker::CUBE_LIST;
-    octree_marker.action = visualization_msgs::msg::Marker::ADD;
+    auto octree = std::dynamic_pointer_cast<octomap::OcTree>(std::shared_ptr<octomap::AbstractOcTree>(octomap_msgs::fullMsgToMap(*msg)));
 
-    octree_marker.scale.x = color_octree_->getResolution();
-    octree_marker.scale.y = color_octree_->getResolution();
-    octree_marker.scale.z = color_octree_->getResolution();
-
-    for (octomap::ColorOcTree::leaf_iterator it = color_octree_->begin_leafs(), end = color_octree_->end_leafs(); it != end; ++it)
+    if (!octree)
     {
-        if (!color_octree_->isNodeOccupied(*it)) {
-            continue; // Skip empty nodes
-        }
-
-        geometry_msgs::msg::Point p;
-        p.x = it.getX();
-        p.y = it.getY();
-        p.z = it.getZ();
-
-        octree_marker.points.push_back(p);
-
-        std_msgs::msg::ColorRGBA color;
-        color.r = it->getColor().r / 255.0;
-        color.g = it->getColor().g / 255.0;
-        color.b = it->getColor().b / 255.0;
-        color.a = 1.0;
-
-        octree_marker.colors.push_back(color);
+        RCLCPP_ERROR(this->get_logger(), "Failed to convert Octomap message to OcTree.");
+        return;
     }
 
-    color_octree_pub_->publish(octree_marker);
+    // Update the OMPL planner with the new octree
+    ompl_planner_->setOctree(octree);
+    ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OctomapStateValidityChecker>(ompl_planner_->getSpaceInformation(), octree);
 }
 
+void LinedroneTestNode::colorOctreeCallback(const octomap_msgs::msg::Octomap::SharedPtr msg)
+{
+    color_octree_ = std::dynamic_pointer_cast<octomap::ColorOcTree>(std::shared_ptr<octomap::AbstractOcTree>(octomap_msgs::fullMsgToMap(*msg)));
+    
+    if (!color_octree_)
+    {
+        RCLCPP_ERROR(this->get_logger(), "Failed to convert Octomap message to ColorOcTree.");
+        return;
+    }
+
+    // Update the linedrone nurbs analyzer with the new octree
+    if (linedrone_nurbs_analyzer_)
+        linedrone_nurbs_analyzer_->setColorOctree(color_octree_.get());
+}
+
+
+// ROS publishers implementations
 void LinedroneTestNode::publishARENAPath()
 {
     if (!arena_path_ || arena_path_->cols() == 0)
@@ -584,7 +584,8 @@ void LinedroneTestNode::initializerPlanning()
     double max_y = -std::numeric_limits<double>::infinity();
     double max_z = -std::numeric_limits<double>::infinity();
 
-    for (auto it = octree_->begin_leafs(), end = octree_->end_leafs(); it != end; ++it)
+    auto octree = ompl_planner_->getOctree();
+    for (auto it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it)
     {
         const octomap::point3d& pt = it.getCoordinate();
 
@@ -889,11 +890,9 @@ void LinedroneTestNode::run()
 
 LinedroneTestNode::LinedroneTestNode(rclcpp::NodeOptions options)
 : Node("linedrone_test_node", options), linedrone_config(50), color_octree_(std::make_shared<octomap::ColorOcTree>(1.0)),
-  octree_(std::make_shared<octomap::OcTree>(1.0)),
   linedrone_nurbs_analyzer_(nullptr), ompl_planner_(nullptr), nurbs_(nullptr), arena_path_(nullptr)
 {
     // ROS Publisher Initialization
-    color_octree_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(ros_namespace_ + "/color_octree", 10);
     arena_control_points_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(ros_namespace_ + "/arena_control_points", 10);
     arena_path_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/arena_path", 10);
     ompl_planner_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/ompl_planner_paths", 10);
@@ -902,25 +901,13 @@ LinedroneTestNode::LinedroneTestNode(rclcpp::NodeOptions options)
     // ROS Subscription Initialization
     goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(ros_namespace_ + "/goal_pose", 10, std::bind(&LinedroneTestNode::goalPoseCallback, this, std::placeholders::_1));
     planning_activation_sub_ = this->create_subscription<std_msgs::msg::Bool>(ros_namespace_ + "/planning_activation", 10, std::bind(&LinedroneTestNode::planningActivationCallback, this, std::placeholders::_1));
+    inflated_octomap_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/navigation/inflated_octomap/full", 10, std::bind(&LinedroneTestNode::inflatedOctomapCallback, this, std::placeholders::_1));
+    color_octomap_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/navigation/sdf_octomap/full", 10, std::bind(&LinedroneTestNode::colorOctreeCallback, this, std::placeholders::_1));
 
     population_size_ = this->get_parameter("optimization.NSGA-II.population_size").as_int();
     // Make sure the population size is divisible by 4
     if (population_size_ % 4 != 0)
         population_size_ += 4 - (population_size_ % 4);
-
-    if (color_octree_->readBinary(map_file_path_))
-    {
-        RCLCPP_INFO(get_logger(), "Octomap loaded successfully from %s", map_file_path_.c_str());
-    }
-    else
-        throw std::runtime_error("Failed to load octomap from " + map_file_path_);
-
-    if (octree_->readBinary(map_file_path_))
-    {
-        RCLCPP_INFO(get_logger(), "Octree loaded successfully from %s", map_file_path_.c_str());
-    }
-    else
-        throw std::runtime_error("Failed to load octree from " + map_file_path_);
 
     // Define the nurbs_analyzer configurations with ros parameters
     linedrone_config.robot_mass_ = this->get_parameter("robot.mass").as_double(); // kg
@@ -944,14 +931,13 @@ LinedroneTestNode::LinedroneTestNode(rclcpp::NodeOptions options)
 
     // Initialize the OMPL planner
     ompl_planner_ = std::make_shared<arena_core::OMPLPlanner>();
-    ompl_planner_->setOctree(octree_);
     double timeout = this->get_parameter("optimization.initialization.timeout").as_double();
     ompl_planner_->setSolvingTimeout(timeout);
     ompl_planner_->setProblemDimensions(3);                                                                                  
     ompl_planner_->getInitializer()->planner_ = std::make_shared<ompl::geometric::RRT>(ompl_planner_->getSpaceInformation());
     double rrt_range = this->get_parameter("optimization.initialization.rrt_range").as_double();
     ompl_planner_->getInitializer()->planner_->as<ompl::geometric::RRT>()->setRange(rrt_range);
-    ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OctomapStateValidityChecker>(ompl_planner_->getSpaceInformation(), octree_);
+    ompl_planner_->getInitializer()->state_validity_checker_ = nullptr;
     ompl_planner_->getInitializer()->optimization_objective_ = nullptr;
 
     // Initialize the NURBS API
@@ -961,8 +947,6 @@ LinedroneTestNode::LinedroneTestNode(rclcpp::NodeOptions options)
     // ROS Timer Initialization
     // Timer for the main loop at 50 Hz
     run_timer_ = this->create_wall_timer(20ms, std::bind(&LinedroneTestNode::run, this));
-    // Timer for the octomap updates at 1 Hz
-    octomap_timer_ = this->create_wall_timer(1000ms, std::bind(&LinedroneTestNode::publishColorOctree, this));
 }
 
 int main(int argc, char **argv)
