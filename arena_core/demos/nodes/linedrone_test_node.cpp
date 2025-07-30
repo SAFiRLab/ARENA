@@ -466,9 +466,9 @@ void LinedroneTestNode::publishSolutionSet(const pagmo::population& pop)
             pose_marker.points.push_back(a_point);
         }
 
-        pose_marker.scale.x = 0.1;
-        pose_marker.scale.y = 0.1;
-        pose_marker.scale.z = 0.1;
+        pose_marker.scale.x = 0.3;
+        pose_marker.scale.y = 0.3;
+        pose_marker.scale.z = 0.3;
         pose_marker.color.a = 0.5;
         
         pagmo::vector_double fitness = pop.get_f()[i];
@@ -517,36 +517,47 @@ std::vector<arena_core::ControlPoint<double, 4>> LinedroneTestNode::pagmoDVToCon
 
 Eigen::MatrixXd LinedroneTestNode::addControlPointsToPath(const Eigen::MatrixXd& initial_control_points, const int nb_of_control_points) const
 {
-    if (initial_control_points.cols() >= nb_of_control_points)
-        return initial_control_points;
-
-    if (nb_of_control_points <= 0)
-        throw std::invalid_argument("LinedroneTestNode::addControlPointsToPath => Number of control points must be greater than 0.");
-
     int initial_size = initial_control_points.cols();
+
     if (initial_size < 2)
-        throw std::invalid_argument("LinedroneTestNode::addControlPointsToPath => Initial control points matrix must have at least 2 columns.");
+        throw std::invalid_argument("Initial control points must have at least 2 columns.");
+    if (nb_of_control_points < initial_size)
+        throw std::invalid_argument("New number of control points must be >= initial number.");
+    if (nb_of_control_points == initial_size)
+        return initial_control_points;
 
     int dim = initial_control_points.rows();
     Eigen::MatrixXd new_path(dim, nb_of_control_points);
-    int nb_of_points_to_add = nb_of_control_points - initial_size;
-    for (int i = 0; i < initial_size - 1; ++i)
-    {
-        Eigen::Vector4d point = initial_control_points.col(i);
-        new_path.col(i) = point;
-    }
-    
-    for (int i = initial_size - 1; i < (initial_size - 1 + nb_of_points_to_add); ++i)
-    {
-        Eigen::Vector4d start_point = initial_control_points.col(initial_size - 3);
-        Eigen::Vector4d end_point = initial_control_points.col(initial_size - 2);
 
-        // Mean point between start and end
-        Eigen::Vector4d mean_point = (start_point + end_point) / 2.0;
-        new_path.col(i) = mean_point;
+    // Total segments between initial control points
+    int segments = initial_size - 1;
+    int points_to_add = nb_of_control_points - initial_size;
+
+    // Compute how many points to insert between each segment
+    std::vector<int> insert_counts(segments, 0);
+    for (int i = 0; i < points_to_add; ++i)
+        insert_counts[i % segments] += 1; // Distribute extra points as evenly as possible
+
+    int new_index = 0;
+    for (int i = 0; i < segments; ++i)
+    {
+        Eigen::VectorXd start = initial_control_points.col(i);
+        Eigen::VectorXd end = initial_control_points.col(i + 1);
+
+        // Always add the start point
+        new_path.col(new_index++) = start;
+
+        int inserts = insert_counts[i];
+        for (int j = 1; j <= inserts; ++j)
+        {
+            double alpha = static_cast<double>(j) / (inserts + 1);
+            Eigen::VectorXd interp = (1.0 - alpha) * start + alpha * end;
+            new_path.col(new_index++) = interp;
+        }
     }
 
-    new_path.col(nb_of_control_points - 1) = initial_control_points.col(initial_size - 1); // Last point is the same as the last point of the initial path
+    // Finally add the last original point
+    new_path.col(new_index++) = initial_control_points.col(initial_size - 1);
 
     return new_path;
 }
