@@ -1,5 +1,5 @@
-#ifndef PAGMO_PROBLEMS_NADILE_HPP
-#define PAGMO_PROBLEMS_NADILE_HPP
+#ifndef PAGMO_PROBLEMS_LINEDRONE_HPP
+#define PAGMO_PROBLEMS_LINEDRONE_HPP
 
 #include <string>
 #include <utility>
@@ -15,18 +15,18 @@
 namespace pagmo
 {
 
-class PAGMO_DLL_PUBLIC nadile_problem
+class PAGMO_DLL_PUBLIC linedrone_problem
 {
 public:
 
     typedef std::function<vector_double(const vector_double &)> fitness_eval_callback;
     typedef std::function<void(const population &)> show_population_callback;
 
-    nadile_problem(vector_double::size_type dim = 5u, vector_double::size_type fdim = 3u, 
+    linedrone_problem(vector_double::size_type dim = 5u, vector_double::size_type fdim = 3u, 
                    fitness_eval_callback* fitness_eval = nullptr, double* x_bounds = nullptr, 
                    double* y_bounds = nullptr, double* z_bounds = nullptr, double drone_speed = 1.0);
 
-    ~nadile_problem();
+    ~linedrone_problem();
 
     // Fitness computation
     vector_double fitness(const vector_double &) const;
@@ -76,10 +76,10 @@ private:
     double* m_z_bounds;
     double m_drone_speed;
 
-}; // class nadile_problem
+}; // class linedrone_problem
 
 }; // namespace pagmo
 
-PAGMO_S11N_PROBLEM_EXPORT_KEY(pagmo::nadile_problem);
+PAGMO_S11N_PROBLEM_EXPORT_KEY(pagmo::linedrone_problem);
 
-#endif // PAGMO_PROBLEMS_NADILE_HPP
+#endif // PAGMO_PROBLEMS_LINEDRONE_HPP

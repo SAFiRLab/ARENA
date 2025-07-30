@@ -1,4 +1,4 @@
-#include "arena_core/math/optimization/problems/pagmo_problems/nadile_problem.hpp"
+#include "linedrone/linedrone_problem.hpp"
 
 #include <cmath>
 #include <initializer_list>
@@ -24,7 +24,7 @@
 namespace pagmo
 {
 
-nadile_problem::nadile_problem(vector_double::size_type dim, vector_double::size_type fdim, 
+    linedrone_problem::linedrone_problem(vector_double::size_type dim, vector_double::size_type fdim, 
                    fitness_eval_callback* fitness_eval, double* x_bounds, 
                    double* y_bounds, double* z_bounds, double drone_speed)
     : m_dim(dim), m_fdim(fdim), m_fitness_eval(fitness_eval), m_x_bounds(x_bounds), 
@@ -32,7 +32,7 @@ nadile_problem::nadile_problem(vector_double::size_type dim, vector_double::size
 {
     if (fdim < 2u) {
         pagmo_throw(std::invalid_argument,
-                    "Nadile problem have a minimum of 2 objectives: fdim=" + std::to_string(fdim) + " was detected");
+                    "Linedrone problem have a minimum of 2 objectives: fdim=" + std::to_string(fdim) + " was detected");
     }
     // We conservatively limit these dimensions to avoid checking overflows later
     if (fdim > std::numeric_limits<decltype(fdim)>::max() / 3u) {
@@ -52,7 +52,7 @@ nadile_problem::nadile_problem(vector_double::size_type dim, vector_double::size
     }
 }
 
-nadile_problem::~nadile_problem()
+linedrone_problem::~linedrone_problem()
 {}
 
 /// Fitness computation
@@ -63,12 +63,12 @@ nadile_problem::~nadile_problem()
  *
  * @return the fitness of \p x.
  */
-vector_double nadile_problem::fitness(const vector_double &x) const
+vector_double linedrone_problem::fitness(const vector_double &x) const
 {
     return m_fitness_eval->operator()(x);
 }
 
-vector_double nadile_problem::fitness_non_const(vector_double &x) const
+vector_double linedrone_problem::fitness_non_const(vector_double &x) const
 {
     return vector_double(4u, std::numeric_limits<double>::max());
 }
@@ -79,7 +79,7 @@ vector_double nadile_problem::fitness_non_const(vector_double &x) const
  *
  * @return the lower and upper bounds for each of the decision vector components
  */
-std::pair<vector_double, vector_double> nadile_problem::get_bounds() const
+std::pair<vector_double, vector_double> linedrone_problem::get_bounds() const
 {
     vector_double lb(m_dim);
     vector_double ub(m_dim);
@@ -110,20 +110,20 @@ std::pair<vector_double, vector_double> nadile_problem::get_bounds() const
 /**
  * @return a string containing the problem name
  */
-std::string nadile_problem::get_name() const
+std::string linedrone_problem::get_name() const
 {
-    return "NADILE";
+    return "LINEDRONE";
 }
 
 // Object serialization
 template <typename Archive>
-void nadile_problem::serialize(Archive &ar, unsigned)
+void linedrone_problem::serialize(Archive &ar, unsigned)
 {
     detail::archive(ar, m_dim, m_fdim);
 }
 
 // Extra information
-std::string nadile_problem::get_extra_info() const
+std::string linedrone_problem::get_extra_info() const
 {
     std::ostringstream ss;
     ss << "Dimension: " << m_dim << "\nNumber of objectives: " << m_fdim << "\n";

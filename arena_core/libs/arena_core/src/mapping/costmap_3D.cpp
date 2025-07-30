@@ -5,37 +5,27 @@ namespace arena_core
 {
 
 Costmap3D::Costmap3D()
-: octree_(new octomap::OcTree(1)),
-color_octree_(new octomap::ColorOcTree(1))
+: octree_(nullptr),
+color_octree_(nullptr)
 {
     // Initialize the controller
 }
 
 Costmap3D::~Costmap3D()
-{
-    if (octree_ != nullptr)
-        delete octree_;
-    if (color_octree_ != nullptr)
-        delete color_octree_;  
-}
+{}
 
-void Costmap3D::setOctree(octomap::OcTree* tree)
+void Costmap3D::setOctree(std::shared_ptr<octomap::OcTree> tree)
 {
     if (tree)
     {
-        if (octree_ != nullptr)
-            delete octree_;
         octree_ = tree; 
-
-        if( color_octree_ != nullptr )  // in-case we are receiving a new octomap before we processed the last one
-            delete color_octree_;      // so delete the previous stored object
 
         // Serialize the input tree to a binary stream
         std::stringstream serializedTree;
         tree->writeBinary(serializedTree);
 
         // Deserialize the binary stream into a ColorOcTree
-        color_octree_ = new octomap::ColorOcTree(tree->getResolution());
+        color_octree_ = std::make_shared<octomap::ColorOcTree>(tree->getResolution());
         color_octree_->readBinary(serializedTree);
 
         if (color_octree_ == nullptr) 
@@ -47,6 +37,12 @@ void Costmap3D::setOctree(octomap::OcTree* tree)
 
 void Costmap3D::inflateOctree(float inflation_radius, float min_influence_radius, float max_influence_radius)
 {
+    if (!octree_)
+        throw std::runtime_error("Costmap3D::inflateOctree => Octree is not set. Cannot inflate the octree.");
+
+    if (!color_octree_)
+        throw std::runtime_error("Costmap3D::inflateOctree => Color octree is not set. Cannot inflate the octree.");
+    
     // expand the nodes of the octree that were pruned
     color_octree_->expand();
 

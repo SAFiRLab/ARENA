@@ -1,14 +1,14 @@
-#include "arena_core/math/nurbs.h"
+#include "linedrone/old_nurbs.h"
 #include "arena_core/math/utils/linalg.h"
 
 #include <iostream>
 #include <algorithm>
 
 
-namespace arena_core
+namespace arena_demos
 {
 
-Nurbs::Nurbs(const std::vector<Eigen::VectorXd>& control_points, int sample_size,
+OldNurbs::OldNurbs(const std::vector<Eigen::VectorXd>& control_points, int sample_size,
 std::vector<double> weights, int degree)
 : control_points_(control_points), sample_size_(sample_size), weights_(weights),
 degree_(degree), dimension_(0), adequate_conf_(false)
@@ -16,7 +16,7 @@ degree_(degree), dimension_(0), adequate_conf_(false)
     initialize();
 }
 
-bool Nurbs::initialize()
+bool OldNurbs::initialize()
 {
     if (control_points_.empty())
     {
@@ -50,7 +50,7 @@ bool Nurbs::initialize()
     return adequate_conf_;
 }
 
-bool Nurbs::setDegree(int degree)
+bool OldNurbs::setDegree(int degree)
 {
     if (1 <= degree <= 5)
     {
@@ -64,7 +64,7 @@ bool Nurbs::setDegree(int degree)
     }
 }
 
-bool Nurbs::setSampleSize(int sample_size)
+bool OldNurbs::setSampleSize(int sample_size)
 {
     if (0 < sample_size)
     {
@@ -77,7 +77,7 @@ bool Nurbs::setSampleSize(int sample_size)
     return false;
 }
 
-bool Nurbs::setControlPoints(const std::vector<Eigen::VectorXd>& control_points)
+bool OldNurbs::setControlPoints(const std::vector<Eigen::VectorXd>& control_points)
 {
     if (control_points.size() != weights_.size())
     {
@@ -95,7 +95,7 @@ bool Nurbs::setControlPoints(const std::vector<Eigen::VectorXd>& control_points)
     return initialize();
 }
 
-bool Nurbs::setControlPoint(const Eigen::VectorXd& control_point, int index)
+bool OldNurbs::setControlPoint(const Eigen::VectorXd& control_point, int index)
 {
     if (control_point.size() != dimension_)
     {
@@ -114,7 +114,7 @@ bool Nurbs::setControlPoint(const Eigen::VectorXd& control_point, int index)
     return false;
 }
 
-bool Nurbs::setWeightedControlPoints(const std::vector<Eigen::VectorXd>& control_points, 
+bool OldNurbs::setWeightedControlPoints(const std::vector<Eigen::VectorXd>& control_points, 
                                      const std::vector<double>& weights)
 {
     if (control_points.empty() || weights.empty())
@@ -135,7 +135,7 @@ bool Nurbs::setWeightedControlPoints(const std::vector<Eigen::VectorXd>& control
     return initialize();
 }
 
-std::vector<double> Nurbs::generateKnotVector() const
+std::vector<double> OldNurbs::generateKnotVector() const
 {
     int num_control_points = control_points_.size();
     
@@ -156,7 +156,7 @@ std::vector<double> Nurbs::generateKnotVector() const
     return knot_vector;
 }
 
-std::vector<int> Nurbs::findSpans() const
+std::vector<int> OldNurbs::findSpans() const
 {
     std::vector<int> spans;
     for (double parameter : parameters_space_)
@@ -165,7 +165,7 @@ std::vector<int> Nurbs::findSpans() const
     return spans;
 }
 
-int Nurbs::findSpan(double parameter) const
+int OldNurbs::findSpan(double parameter) const
 {
     int span = degree_ + 1;
 
@@ -175,7 +175,7 @@ int Nurbs::findSpan(double parameter) const
     return span - 1;
 }
 
-void Nurbs::basisFunction(int span, double parameter, double* N) const
+void OldNurbs::basisFunction(int span, double parameter, double* N) const
 {
     double left[degree_ + 1] = {0.0};
     double right[degree_ + 1] = {0.0};
@@ -195,7 +195,7 @@ void Nurbs::basisFunction(int span, double parameter, double* N) const
     }
 }
 
-void Nurbs::basisFunctions(double** basis) const
+void OldNurbs::basisFunctions(double** basis) const
 {
     for (size_t i = 0; i < spans_.size(); i++)
     {
@@ -204,7 +204,7 @@ void Nurbs::basisFunctions(double** basis) const
     }
 }
 
-std::vector<std::vector<double>> Nurbs::basisFunctionDerivatives(int order, int span, double parameter) const
+std::vector<std::vector<double>> OldNurbs::basisFunctionDerivatives(int order, int span, double parameter) const
 {
     std::vector<std::vector<double>> ders(std::min(degree_, order) + 1, std::vector<double>(degree_ + 1, 0.0));
     std::vector<double> left(degree_ + 1, 1.0);
@@ -290,7 +290,7 @@ std::vector<std::vector<double>> Nurbs::basisFunctionDerivatives(int order, int 
     return ders;
 }
 
-std::vector<std::vector<std::vector<double>>> Nurbs::basisFunctionsDerivatives(int order) const
+std::vector<std::vector<std::vector<double>>> OldNurbs::basisFunctionsDerivatives(int order) const
 {
     std::vector<std::vector<std::vector<double>>> ders;
     int du = std::min(degree_, order);
@@ -300,7 +300,7 @@ std::vector<std::vector<std::vector<double>>> Nurbs::basisFunctionsDerivatives(i
     return ders;
 }
 
-Eigen::VectorXd* Nurbs::evaluate() const
+Eigen::VectorXd* OldNurbs::evaluate() const
 {
     double** crvpt_w = new double*[parameters_space_.size()];
     Eigen::VectorXd* eval_points = new Eigen::VectorXd[parameters_space_.size()];
@@ -366,7 +366,7 @@ Eigen::VectorXd* Nurbs::evaluate() const
     return eval_points;
 }
 
-std::vector<std::vector<std::vector<double>>> Nurbs::derivatives(int order) const
+std::vector<std::vector<std::vector<double>>> OldNurbs::derivatives(int order) const
 {
     int du = std::min(degree_, order);
     std::vector<std::vector<std::vector<double>>> CK(parameters_space_.size(), 
@@ -400,4 +400,4 @@ std::vector<std::vector<std::vector<double>>> Nurbs::derivatives(int order) cons
     return CK;
 }
 
-}; // namespace arena_core
+}; // namespace arena_demos

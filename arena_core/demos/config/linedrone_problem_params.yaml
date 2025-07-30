@@ -1,0 +1,63 @@
+linedrone_test_node:
+    ros__parameters:
+        robot:
+            max_speed: 0.5                           # Speed of the robot in m/s
+            max_acceleration: 2.2                    # Acceleration of the robot in m/s^2 and has been taken from flight logs
+            mass: 20.0                           # Mass of the robot in kg
+            permanent_power:                     # Power consumed by the robot in permanet regime in W
+                pitch: 3102.0
+                roll: 3102.0
+                ascent: 3475.0
+                descent: 3080.0
+            #permanent_power:
+                #  pitch: 482.0
+                #  roll: 482.0
+                #  ascent: 578.0
+                #  descent: 288.0
+        optimization:
+            initialization:
+                timeout: 1.0                       # Maximum time for RRT in seconds
+                rrt_range: 5.0                        # Distance between nodes in the RRT
+            sample_size: 50                      # Number of points along a curve
+            NSGA-II:
+                population_size: 40                     # Number of individuals in the population
+                generations: 1000                      # Number of generations
+                mutation_params: 
+                    distribution_index: 20.0             # Distribution index of the mutation
+                crossover_params:
+                    distribution_index: 20.0             # Distribution index of the crossover
+                    probability: 0.9                     # Probability of crossover
+            adaptive_costs_weights:
+                time: 1.0                            # Weight of the time cost
+                safety: 0.0                        # Weight of the safety cost
+                energy: 0.0                          # Weight of the energy cost
+
+# Different drone specs
+
+####### LineDrone #######
+#robot:
+    # max_speed: 0.5
+    # max_acceleration: 2.2
+    # mass: 20.0
+    # permanent_power:
+        #  pitch: 3102.0
+        #  roll: 3102.0
+        #  ascent: 3475.0
+        #  descent: 3080.0
+
+####### John's drone #######
+#robot:
+    # max_speed: 36.1111
+    # max_acceleration: 60.0
+    # mass: 2.65
+    # permanent_power:
+    #      pitch: 482.0
+    #      roll: 482.0
+    #      ascent: 578.0
+    #      descent: 288.0
+
+####### DJI Mini 3 pro #######
+#robot:
+    # max_speed: 5.0
+    # max_acceleration: 105.9
+    # mass: 0.25

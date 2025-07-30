@@ -45,14 +45,14 @@ public:
     ~Costmap3D();
 
     // Getters
-    octomap::OcTree* getOctree() const { return octree_; };
-    octomap::ColorOcTree* getColorOctree() const { return color_octree_; };
+    std::shared_ptr<octomap::OcTree> getOctree() const { return octree_; };
+    std::shared_ptr<octomap::ColorOcTree> getColorOctree() const { return color_octree_; };
     float getInflationRadius() const { return inflation_radius_; };
     float getMinInfluenceRadius() const { return min_influence_radius_; };
     float getMaxInfluenceRadius() const { return max_influence_radius_; };
 
     // Setters
-    void setOctree(octomap::OcTree* tree);
+    void setOctree(std::shared_ptr<octomap::OcTree> tree);
     void setInflationRadius(float inflation_radius) { inflation_radius_ = inflation_radius; }
     void setMinInfluenceRadius(float min_influence_radius) { min_influence_radius_ = min_influence_radius; }
     void setMaxInfluenceRadius(float max_influence_radius) { max_influence_radius_ = max_influence_radius; }
@@ -67,8 +67,8 @@ private:
     float computeCollisionCost(float node_distance, float min_influence_radius, float max_influence_radius);
     
     // User-defined variables
-    octomap::OcTree* octree_;
-    octomap::ColorOcTree* color_octree_;
+    std::shared_ptr<octomap::OcTree> octree_;
+    std::shared_ptr<octomap::ColorOcTree> color_octree_;
 
     // Parameters
     float inflation_radius_ = 1.5;

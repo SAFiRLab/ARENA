@@ -10,34 +10,44 @@ namespace arena_core
 {
 
 OctomapStateValidityChecker::OctomapStateValidityChecker(const ompl::base::SpaceInformationPtr& si,
-														 std::shared_ptr<octomap::OcTree> tree)
-: ompl::base::StateValidityChecker(si), tree_(std::make_shared<fcl::OcTreed>(tree)),
-tree_object_(std::make_shared<fcl::CollisionObjectd>(tree_)),
-robot_geometry_(std::make_shared<fcl::Boxd>(0.25, 0.25, 0.25)),
-robot_object_(std::make_shared<fcl::CollisionObjectd>(robot_geometry_))
-{}
+														 std::shared_ptr<octomap::OcTree> tree, double step)
+: ompl::base::StateValidityChecker(si), octree_(std::move(tree)), step_(step)
+{
+    if (!octree_)
+        throw std::runtime_error("arena_core::OctomapStateValidityChecker(): Octree is null.");
+
+    if (step_ <= 0.0)
+        throw std::invalid_argument("arena_core::OctomapStateValidityChecker(): Step size must be positive.");
+}
 
 bool OctomapStateValidityChecker::isValid(const ompl::base::State *state) const
 {
-    const auto *se3state = state->as<ompl::base::SE3StateSpace::StateType>();
+    // Cast the abstract state type to the type we expect
+    // Cast to RealVectorStateSpace
+    const auto *real_state = state->as<ompl::base::RealVectorStateSpace::StateType>();
+    if (!real_state)
+        throw std::runtime_error("arena_core::OctomapStateValidityChecker::isValid(): State is not of type RealVectorStateSpace.");
 
-    const auto *pos = se3state->as<ompl::base::RealVectorStateSpace::StateType>(0);
-    const auto *rot = se3state->as<ompl::base::SO3StateSpace::StateType>(1);
+    // The rest of this isValid check verifies for 3D collision using the octree and expects the state values to be [x, y, z, ...]
+    const double x = real_state->values[0];
+    const double y = real_state->values[1];
+    const double z = real_state->values[2];
 
-    fcl::Vector3<double> translation(pos->values[0] + 1.3, pos->values[1] + 1.3, pos->values[2] + 0.85);
-    fcl::Quaternion<double> rotation(rot->w, rot->x, rot->y, rot->z);
+    // Define the bounding box around the robot's center position
+    const octomap::point3d center(x, y, z);
+    const octomap::point3d bbx_min(center.x() - step_, center.y() - step_, center.z() - step_);
+    const octomap::point3d bbx_max(center.x() + step_, center.y() + step_, center.z() + step_);
 
-    robot_object_->setTranslation(translation);
-    robot_object_->setRotation(rotation.toRotationMatrix());
-    robot_object_->computeAABB();
+    // Iterate over all occupied voxels in the bounding box
+    for (auto it = octree_->begin_leafs_bbx(bbx_min, bbx_max); it != octree_->end_leafs_bbx(); ++it)
+    {
+        if (octree_->isNodeOccupied(*it))
+            return false;
+    }
 
-    fcl::CollisionRequestd request;
-    fcl::CollisionResultd result;
-
-    fcl::collide(robot_object_.get(), tree_object_.get(), request, result);
-
-    return !result.isCollision();
+    return true;
 }
+
 
 double OctomapStateValidityChecker::clearance(const ompl::base::State *state) const
 {
