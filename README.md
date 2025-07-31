@@ -11,7 +11,7 @@ As of now, the algorithm has been only applied to real UAV power line inspection
 <p align="center"><strong>Real flights in a simulated power line inspection scenario</strong></p>
 <p align = "center">
 <img src="doc/images/real_flight_scenarios.png" width="45%" title="Real flights in a simulated power line inspection scenario">
-<img src="doc/images/real_flight_scenarios_visualization.png" width="45%" height="257px" title="RVIZ visualization of real flights in simulated power line inspection scenario">
+<img src="doc/images/real_flight_scenarios_visualization.png" width="45%" height="257" title="RVIZ visualization of real flights in simulated power line inspection scenario">
 </p>
 
 In the UAV power line inspection scenario, we optimize for time, safety, and energy. We can see trajectoris in green staying further from obstacles, trajectories in pink being faster and more energy-efficient, and trajectories in white being a mix of every objective.
@@ -26,7 +26,7 @@ After the genetic-based optimization, the ARENA framework proposes a Pareto fron
 <p align="center"><strong>Trajectories according to different sets of mission risks for an inspection UAV</strong></p>
 <p align = "center">
 <img src="doc/images/trajectories_according_to_risks_construction_site.png" width="45%" title="Optimized trajectories that would have been chosen in different risks scenarios in an urban construction site">
-<img src="doc/images/trajectories_according_to_risks_power_lines.png" width="45%" height="412px" title="Optimized trajectories that would have been chosen in different risks scenarios on power lines">
+<img src="doc/images/trajectories_according_to_risks_power_lines.png" width="45%" height="412" title="Optimized trajectories that would have been chosen in different risks scenarios on power lines">
 </p>
 
 
