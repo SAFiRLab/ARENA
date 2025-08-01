@@ -156,7 +156,7 @@ sudo cmake --build . --target install
 
 ### Build arena_core
 
-1. Clone the ARENA repository and **ROS2 Facultative*** place the arena_core package in your worskpace/src.
+1. Clone the ARENA repository and **ROS2 Facultative** place the arena_core package in your worskpace/src.
 
 2. Move into the arena_core folder
 
