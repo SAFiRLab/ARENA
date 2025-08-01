@@ -1,6 +1,3 @@
-add_executable(pagmo_test pagmo_test.cpp ${ARENA_DEMOS_SRCS})
-target_link_libraries(pagmo_test ${PROJECT_NAME}_arena_core)
-
 add_executable(costmap_3D_node costmap_3D_node.cpp)
 target_link_libraries(costmap_3D_node ${PROJECT_NAME}_arena_core)
 ament_target_dependencies(costmap_3D_node 
@@ -46,7 +43,6 @@ ament_target_dependencies(linedrone_test_node
 )
 
 install(TARGETS
-  pagmo_test
   costmap_3D_node
   nurbs_test_node
   mpc_controller_node

@@ -18,28 +18,14 @@ target_include_directories(${PROJECT_NAME}_arena_core
            $<INSTALL_INTERFACE:include>
 )
 
-#add_dependencies(${PROJECT_NAME}_arena_core
-#    ${catkin_EXPORTED_TARGETS}
-#)
 
 set(ARENA_CORE_PACKAGES_LIBRARIES
     ${OCTOMAP_LIBRARIES}
     ${OMPL_LIBRARIES}
-    ${LIBFCL_LIBRARIES}
     yaml-cpp
     Pagmo::pagmo
 )
 
-# Set OpenMP flags if OpenMP is found
-if(OpenMP_CXX_FOUND)
-    target_compile_options(${PROJECT_NAME}_arena_core 
-    PRIVATE ${OpenMP_CXX_FLAGS}
-    )
-    set(ARENA_CORE_PACKAGES_LIBRARIES
-        ${ARENA_CORE_PACKAGES_LIBRARIES} 
-        OpenMP::OpenMP_CXX
-    )
-endif()
 
 target_link_libraries(${PROJECT_NAME}_arena_core
     ${ARENA_CORE_PACKAGES_LIBRARIES}

@@ -3,8 +3,6 @@
 // OMPL
 #include <ompl/base/spaces/SE3StateSpace.h>
 
-// FCL
-
 
 namespace arena_core
 {
