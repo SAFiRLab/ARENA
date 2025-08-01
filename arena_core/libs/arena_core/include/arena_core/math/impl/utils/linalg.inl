@@ -32,7 +32,7 @@
 
 #pragma once
 
-// Sytem
+// System
 #include <vector>
 
 
