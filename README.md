@@ -4,10 +4,18 @@ ARENA is an adaptive risk-aware and energy-efficient navigation approach used in
 
 If you find this work useful or interesting, we kindly invite you to star :star: the library!
 
+Authors:
+[David-Alexandre Poissant](https://scholar.google.com/citations?hl=fr&user=Svw24awAAAAJ),
+[Louis Petit](https://scholar.google.com/citations?hl=fr&user=hRBrqKIAAAAJ).
+
 ### *Note
 As of now, the algorithm has been only applied to real UAV power line inspection scenarios. We plan to investigate the generalization of the method to different scenarios and different platforms in future works. This algorithm represents a framework of multi-objective optimisation in the field of path planning or decision making for unmanned autonomous robots. As of now, we can optimize, but are not limited to, time, safety, and energy along a trajectory for an inspection UAV.
 
 ## Related paper
+<a href="https://arxiv.org/abs/2502.19401" style="vertical-align:middle; display:inline;">
+    <img src="https://img.shields.io/badge/cs.CV-arXiv%3A2502.06631-B31B1B.svg" class="plain" style="height:25px;" />
+</a>
+
 *ARENA: Adaptive Risk-aware and Energy-efficient NAvigation for Multi-Objective 3D Infrastructure Inspection with a UAV*, David-Alexandre Poissant, Alexis Lussier Desbiens, François Ferland, and Louis Petit (To be submitted to ICRA2026). 
 
 <p align="center"><strong>Real flights in a simulated power line inspection scenario</strong></p>
