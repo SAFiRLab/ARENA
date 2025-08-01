@@ -8,6 +8,29 @@ Authors:
 [David-Alexandre Poissant](https://scholar.google.com/citations?hl=fr&user=Svw24awAAAAJ),
 [Louis Petit](https://scholar.google.com/citations?hl=fr&user=hRBrqKIAAAAJ).
 
+<p align="center"><strong>ARENA demo with the linedrone problem</strong></p>
+<p align = "center">
+<img src="doc/images/demo_arena_linedrone_gif.gif" width="60%" title="Arena demonstration in a power line simulated environment">
+</p>
+<p align="center"><strong>*Keep in mind that this is a slowed representation of the optimization process as we show all solution sets throughout optimization.</strong></p>
+<p align="center"><strong>Hyperparameters for this demo</strong></p>
+
+<div align="center">
+<table>
+  <thead>
+    <tr><th>Hyperparameter name</th><th>Value</th><th>Unit</th></tr>
+  </thead>
+  <tbody>
+    <tr> <td>NSGA-II number of generation</td><td>2500</td><td>n/a</td></tr>
+    <tr><td>NSGA-II population size</td><td>100</td><td>n/a</td></tr>
+    <tr><td>OMPL RRT node distance (initialization)</td> <td>9.0</td><td>m</td></tr>
+    <tr><td>NURBS sampling size</td><td>50</td><td>n/a</td></tr>
+  </tbody>
+</table>
+</div>
+
+These hyperparameters have been chosen only to show optimization process and are way over-designed for the linedrone problem.
+
 ### *Note
 As of now, the algorithm has been only applied to real UAV power line inspection scenarios. We plan to investigate the generalization of the method to different scenarios and different platforms in future works. This algorithm represents a framework of multi-objective optimisation in the field of path planning or decision making for unmanned autonomous robots. As of now, we can optimize, but are not limited to, time, safety, and energy along a trajectory for an inspection UAV.
 
