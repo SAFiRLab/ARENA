@@ -51,10 +51,16 @@ Our voting algorithm is adapted for any amount of objectives, as long as a facto
 * This work extends [MOAR-Planner](https://github.com/SAFiRLab/moar-planner) to 3D environments and optimizes all path planning objectives as a Pareto front.
 
 
+## Hardware setup
+We run the docker image on windows 11 integrating WSL2 through Docker. Architecture: x64
+
+### *Note
+We realize that the image docker image is based on an nvidia/cuda image, but it is not a hardware requirement for now.
+
 ## Quick start
 This library was primarly developped using docker. Therefore, for easy quick start to test the library, we suggest installing [docker](https://www.docker.com/products/docker-desktop/).
 
-Taking for granted docker has been installed and docker engine is running:
+Taking for granted an up-to-date version of docker has been installed and docker engine with WSL2 integration is running:
 
 1. Build the container image using OS specified script in [scripts](./scripts) (this can take awhile)
 2. Run the container image using OS specified script in [scripts](./scripts)
@@ -110,33 +116,19 @@ apt-get update && apt-get install -y \
 
 4. Clone the ARENA repository and **ROS2 Facultative*** place the arena_core package in your worskpace/src.
 
-The arena_core library has 3 important dependancies: , [Eigen3](https://eigen.tuxfamily.org/index.php?title=Main_Page), [OMPL](https://ompl.kavrakilab.org/), [pagmo2](https://esa.github.io/pagmo2/), and 2 **Facultative** dependancies: [octomap](https://octomap.github.io/), and [FCL](https://github.com/flexible-collision-library/fcl). 
+The arena_core library has 4 important dependancies: , [Eigen3](https://eigen.tuxfamily.org/index.php?title=Main_Page), [OMPL](https://ompl.kavrakilab.org/), [pagmo2](https://esa.github.io/pagmo2/), and [octomap](https://octomap.github.io/).
 
-5. **Facultative** If you want to run the linedrone demo or the costmap_node, you will need all 5 external libraries and ROS2 so you should have done steps 1 through 4 and therefore OMPL, Octomap, and Eigen3 should already be installed.
+5. **Facultative** If you want to run the linedrone demo or the costmap_node, you will need all 4 external libraries and ROS2 so you should have done steps 1 through 4 and therefore OMPL, Octomap, and Eigen3 should already be installed.
 
-6. You will also need to install FCL:
-
-```
-cd ~
-git clone https://github.com/flexible-collision-library/fcl.git
-cd ~/fcl
-mkdir build
-cd build
-source /opt/ros/humble/setup.bash
-cmake .. -DCMAKE_BUILD_TYPE=Release -DFCL_WITH_OCTOMAP=ON -DOCTOMAP_INCLUDE_DIR=/opt/ros/humble/include -DOCTOMAP_LIBRARY=/opt/ros/humble/lib/x86_64-linux-gnu/liboctomap.so
-make -j4
-sudo make install
-```
-
-7. **If you don't need to run ROS2 demos** (steps 1 through 5), here's how to install Eigen3:
+6. **If you don't need to run ROS2 demos** (steps 1 through 5), here's how to install Eigen3:
 
 ```
 sudo apt install libeigen3-dev
 ```
 
-8. **If you don't need to run ROS2 demos** (steps 1 through 5), you can follow [this documentation](https://ompl.kavrakilab.org/installation.html) to install OMPL.
+7. **If you don't need to run ROS2 demos** (steps 1 through 5), you can follow [this documentation](https://ompl.kavrakilab.org/installation.html) to install OMPL from sources.
 
-9. For pagmo2, we have a temporary fork to fix some bugs and add small features in order to check initial population boundaries and give the possibility to change the initial population. **We have no intent of distributing this fork to respect their GPL-3.0 licence** (Note that we implement the fixes and features [here](https://github.com/Dave-Poissant/pagmo2/tree/work_on_archipelago) and you are free to change the git clone link). Here is how to install it from source:
+8. For pagmo2, we have a temporary fork to fix some bugs and add small features in order to check initial population boundaries and give the possibility to change the initial population. **We have no intent of distributing this fork to respect their GPL-3.0 licence** (Note that we implement the fixes and features [here](https://github.com/Dave-Poissant/pagmo2/tree/work_on_archipelago) and you are free to change the git clone link). Here is how to install it from sources:
 
 ```
 cd ~
@@ -152,6 +144,8 @@ cmake .. -DPAGMO_WITH_EIGEN3=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build
 sudo cmake --build . --target install
 ```
+
+9. **If you don't need to run ROS2 demos** (steps 1 through 5), you can follow [this documentation](https://github.com/OctoMap/octomap/wiki/Compilation-and-Installation-of-OctoMap) to install Octomap from sources.
 
 
 ## Code usage for different optimization problems
