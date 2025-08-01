@@ -64,7 +64,7 @@ Taking for granted an up-to-date version of docker has been installed and docker
 
 1. Build the container image using OS specified script in [scripts](./scripts) (this can take awhile)
 2. Run the container image using OS specified script in [scripts](./scripts)
-3. In the container: ```colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release```
+3. In the container: ```colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DENABLE_ROS2```
 
 We recommend using [VSCode](https://code.visualstudio.com/) with the dev container for remote explorer [extension](https://code.visualstudio.com/docs/remote/remote-overview) since you can easily launch multiple terminals and therefore launch multiple ROS2 nodes at the same time.
 
@@ -97,9 +97,11 @@ We also note that we use [Foxglove](https://foxglove.dev/download) to visualize 
 
 To build your dev environment you can follow the steps in the [Dockerfile](./Dockerfile), but here is a detailed breakdown of the needed steps.
 
+### Dependencies
+
 1. **ROS2 Facultative** If you want to run the linedrone demo or run the costmap node, you need a ROS2 distribution.
 2. **ROS2 Facultative** Create your ROS2 workspace.
-3. **ROS2 Facultative** install linedrone demo and costmap_node dependancies (replace DISTRO variable with your ROS2 distribution ex: humble):
+3. **ROS2 Facultative** install linedrone demo and costmap_node dependencies (replace DISTRO variable with your ROS2 distribution ex: humble):
 
 ```
 DISTRO=humble
@@ -111,14 +113,19 @@ apt-get update && apt-get install -y \
     libjsoncpp-dev \
     libsecret-1-dev \
     libccd-dev && \
+    libpcl-dev  && \
     rm -rf /var/lib/apt/lists/*
 ```
 
-4. Clone the ARENA repository and **ROS2 Facultative*** place the arena_core package in your worskpace/src.
+The arena_core library has 7 required dependancies: [Eigen3](https://eigen.tuxfamily.org/index.php?title=Main_Page), [OMPL](https://ompl.kavrakilab.org/), [pagmo2](https://esa.github.io/pagmo2/), and [octomap](https://octomap.github.io/), [PCL](https://pointclouds.org/), [Boost](https://www.boost.org/), and [ament cmake](https://docs.ros.org/en/foxy/How-To-Guides/Ament-CMake-Documentation.html), **ROS2 FACULTATIVE** and 1 dependency if you want to run the linedrone demo or the costmap node: yaml-cpp.
 
-The arena_core library has 4 important dependancies: , [Eigen3](https://eigen.tuxfamily.org/index.php?title=Main_Page), [OMPL](https://ompl.kavrakilab.org/), [pagmo2](https://esa.github.io/pagmo2/), and [octomap](https://octomap.github.io/).
+4. **ROS2 Facultative** If you want to run the linedrone demo or the costmap_node, you will need all external dependancies and ROS2 so you should have done steps 1 through 4 and therefore OMPL, Octomap, Eigen3, PCL, yaml-cpp, boost, and ament cmake should already be installed.
 
-5. **Facultative** If you want to run the linedrone demo or the costmap_node, you will need all 4 external libraries and ROS2 so you should have done steps 1 through 4 and therefore OMPL, Octomap, and Eigen3 should already be installed.
+5. **If you don't need to run ROS2 demos** (steps 1 through 5), here's how to install boost, ament cmake, and pcl on Ubuntu:
+
+```
+sudo apt install ament-cmake, libboost-all-dev, libpcl-dev
+```
 
 6. **If you don't need to run ROS2 demos** (steps 1 through 5), here's how to install Eigen3:
 
@@ -146,6 +153,29 @@ sudo cmake --build . --target install
 ```
 
 9. **If you don't need to run ROS2 demos** (steps 1 through 5), you can follow [this documentation](https://github.com/OctoMap/octomap/wiki/Compilation-and-Installation-of-OctoMap) to install Octomap from sources.
+
+### Build arena_core
+
+1. Clone the ARENA repository and **ROS2 Facultative*** place the arena_core package in your worskpace/src.
+
+2. Move into the arena_core folder
+
+3. ```
+   mkdir build
+   cd build
+   # Change <PATH_TO_ARENA_CORE_ROOT_FOLDER> with the path to arena_core
+   cmake <PATH_TO_ARENA_CORE_ROOT_FOLDER> -DCMAKE_BUILD_TYPE=Release -DENABLE_ROS2=OFF
+   make
+   sudo make install
+   ```
+
+4. You can test the build with:
+
+```
+# Change <PATH_TO_ARENA_CORE_ROOT_FOLDER> with the path to arena_core
+cd <PATH_TO_ARENA_CORE_ROOT_FOLDER>
+./build/libs/demos/tests/pagmo_test
+```
 
 
 ## Code usage for different optimization problems
