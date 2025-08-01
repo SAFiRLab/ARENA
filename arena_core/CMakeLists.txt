@@ -11,17 +11,17 @@ option(ENABLE_ROS2 "Build with ROS2 support" OFF)
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-
 find_package(ompl REQUIRED)
 find_package(octomap REQUIRED)
 find_package(Eigen3)
-find_package(yaml-cpp REQUIRED)
 find_package(Pagmo REQUIRED)
 find_package(PCL REQUIRED)
 find_package(Boost REQUIRED COMPONENTS serialization filesystem system)
 
+
 if (ENABLE_ROS2)
     find_package(rclcpp REQUIRED)
+    find_package(yaml-cpp REQUIRED)
     find_package(tf2 REQUIRED)
     find_package(tf2_ros REQUIRED)
     find_package(octomap_msgs REQUIRED)
@@ -40,9 +40,14 @@ include_directories(
     ${EIGEN3_INCLUDE_DIRS}
     ${OCTOMAP_INCLUDE_DIRS}
     ${OMPL_INCLUDE_DIRS}
-    ${YAML_INCLUDE_DIRS}
     ${PCL_INCLUDE_DIRS}
 )
+
+if (ENABLE_ROS2)
+    include_directories(
+        ${YAML_INCLUDE_DIRS}
+    )
+endif()
 
 
 add_subdirectory(libs)
