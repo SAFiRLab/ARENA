@@ -95,7 +95,7 @@ We also note that we use [Foxglove](https://foxglove.dev/download) to visualize 
 
 ## Manual setup environment
 
-To build your dev environment you can follow the steps in the [Dockerfile](./Dockerfile), but here is a detailed breakdown of the needed steps.
+To build your dev environment you can follow the steps in the [Dockerfile](./Dockerfile), but here is a detailed breakdown of the needed steps. Note that for clarity and simplicity we give command lines for ubuntu-based OS, but the steps stays the same.
 
 ### Dependencies
 
@@ -121,7 +121,7 @@ The arena_core library has 7 required dependancies: [Eigen3](https://eigen.tuxfa
 
 4. **ROS2 Facultative** If you want to run the linedrone demo or the costmap_node, you will need all external dependancies and ROS2 so you should have done steps 1 through 4 and therefore OMPL, Octomap, Eigen3, PCL, yaml-cpp, boost, and ament cmake should already be installed.
 
-5. **If you don't need to run ROS2 demos** (steps 1 through 5), here's how to install boost, ament cmake, and pcl on Ubuntu:
+5. **If you don't need to run ROS2 demos** (steps 1 through 5), here's how to install boost, ament cmake, and pcl:
 
 ```
 sudo apt install ament-cmake, libboost-all-dev, libpcl-dev
@@ -189,5 +189,7 @@ The source code is released under the [BSD 3-Clause](https://opensource.org/lice
 ## Maintenance
 We are still working on extending the proposed framework and improving code reliability and optimization.
 
-For any issues or questions, please contact the author through this [google form](https://docs.google.com/forms/d/e/1FAIpQLSfq_Xg0x-n_8Bg8ee6tKegsIJoKrA4ExM2agFWxi_-rJXfBAw/viewform?usp=sharing&ouid=110205931671074698596)
+If you are using this library and would like your project to be included in our list of featured projects, feel free to contact us, we’ll be happy to add it.
+
+For any inquiries, please contact the authors through this [google form](https://docs.google.com/forms/d/e/1FAIpQLSfq_Xg0x-n_8Bg8ee6tKegsIJoKrA4ExM2agFWxi_-rJXfBAw/viewform?usp=sharing&ouid=110205931671074698596)
 
