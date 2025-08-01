@@ -13,7 +13,7 @@ As of now, the algorithm has been only applied to real UAV power line inspection
 
 ## Related paper
 <a href="https://arxiv.org/abs/2502.19401" style="vertical-align:middle; display:inline;">
-    <img src="https://img.shields.io/badge/cs.CV-arXiv%3A2502.06631-B31B1B.svg" class="plain" style="height:25px;" />
+    <img src="https://img.shields.io/badge/cs.CV-arXiv%3A2502.19401-B31B1B.svg" class="plain" style="height:25px;" />
 </a>
 
 *ARENA: Adaptive Risk-aware and Energy-efficient NAvigation for Multi-Objective 3D Infrastructure Inspection with a UAV*, David-Alexandre Poissant, Alexis Lussier Desbiens, François Ferland, and Louis Petit (To be submitted to ICRA2026). 
@@ -24,7 +24,7 @@ As of now, the algorithm has been only applied to real UAV power line inspection
 <img src="doc/images/real_flight_scenarios_visualization.png" width="45%" title="RVIZ visualization of real flights in simulated power line inspection scenario">
 </p>
 
-In the UAV power line inspection scenario, we optimize for time, safety, and energy. We can see trajectoris in green staying further from obstacles, trajectories in pink being faster and more energy-efficient, and trajectories in white being a mix of every objective.
+In the UAV power line inspection scenario, we optimize for time, safety, and energy. We can see trajectories in green staying further from obstacles, trajectories in pink being faster and more energy-efficient, and trajectories in white being a mix of every objective.
 
 <p align="center"><strong>Pareto front visualization after optimization</strong></p>
 <p align = "center">
@@ -69,7 +69,7 @@ Taking for granted an up-to-date version of docker has been installed and docker
 We recommend using [VSCode](https://code.visualstudio.com/) with the dev container for remote explorer [extension](https://code.visualstudio.com/docs/remote/remote-overview) since you can easily launch multiple terminals and therefore launch multiple ROS2 nodes at the same time.
 
 4. In the container: ```ros2 launch arena_core costmap_3D_node```
-5. In the container (another terminal): ```ros2 launch arena-core linedrone_test_node```
+5. In the container (another terminal): ```ros2 launch arena_core linedrone_test_node```
 6. In the container (another terminal) send planning request informations:
 
 ```
@@ -117,14 +117,14 @@ apt-get update && apt-get install -y \
     rm -rf /var/lib/apt/lists/*
 ```
 
-The arena_core library has 7 required dependancies: [Eigen3](https://eigen.tuxfamily.org/index.php?title=Main_Page), [OMPL](https://ompl.kavrakilab.org/), [pagmo2](https://esa.github.io/pagmo2/), and [octomap](https://octomap.github.io/), [PCL](https://pointclouds.org/), [Boost](https://www.boost.org/), and [ament cmake](https://docs.ros.org/en/foxy/How-To-Guides/Ament-CMake-Documentation.html), **ROS2 FACULTATIVE** and 1 dependency if you want to run the linedrone demo or the costmap node: yaml-cpp.
+The arena_core library has 7 required dependancies: [Eigen3](https://eigen.tuxfamily.org/index.php?title=Main_Page), [OMPL](https://ompl.kavrakilab.org/), [pagmo2](https://esa.github.io/pagmo2/), and [octomap](https://octomap.github.io/), [PCL](https://pointclouds.org/), [Boost](https://www.boost.org/), and [cmake](https://cmake.org/), **ROS2 FACULTATIVE** and 1 dependency if you want to run the linedrone demo or the costmap node: yaml-cpp. Also, ROS2 packages uses [ament-cmake](https://docs.ros.org/en/foxy/How-To-Guides/Ament-CMake-Documentation.html).
 
 4. **ROS2 Facultative** If you want to run the linedrone demo or the costmap_node, you will need all external dependancies and ROS2 so you should have done steps 1 through 4 and therefore OMPL, Octomap, Eigen3, PCL, yaml-cpp, boost, and ament cmake should already be installed.
 
 5. **If you don't need to run ROS2 demos** (steps 1 through 5), here's how to install boost, ament cmake, and pcl:
 
 ```
-sudo apt install ament-cmake, libboost-all-dev, libpcl-dev
+sudo apt install cmake, libboost-all-dev, libpcl-dev
 ```
 
 6. **If you don't need to run ROS2 demos** (steps 1 through 5), here's how to install Eigen3:
@@ -144,11 +144,11 @@ git clone https://github.com/esa/pagmo2.git
 # git checkout -b work_on_archipelago origin/work_on_archipelago
 git fetch
 git pull
-cd /home/pagmo2
+cd ~/pagmo2
 mkdir build
 cd build
 cmake .. -DPAGMO_WITH_EIGEN3=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build
+cmake --build .
 sudo cmake --build . --target install
 ```
 
