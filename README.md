@@ -1,6 +1,9 @@
 # ARENA
 
-ARENA is an adaptive risk-aware and energy-efficient navigation approach used in multi-objectives path planning problem in complex 3D environments. This algorithm enables online trajectory adaptation by optimizing multiple objectives on a Pareto front with a genetic-based algorithm and using non-uniform rational b-spline as a continuous representation of trajectories. A novel risk-aware voting algorithm ensures adaptivity by choosing one solution of the optimization according to evolving mission risks.
+ARENA is an adaptive risk-aware and energy-efficient navigation approach used in multi-objectives path planning problem in complex 3D environments. 
+
+#### Why use ARENA?
+This framework enables online trajectory adaptation by optimizing multiple objectives on a Pareto front with a genetic-based algorithm and using non-uniform rational b-spline (NURBS) as a continuous representation of trajectories. A novel risk-aware voting algorithm ensures adaptivity by choosing one solution of the optimization according to evolving mission risks. So if you have a continuous multi-objective optimization problem and you don't want to to influence the research of the search space with hand-designed cost weights, this framework is for you.
 
 If you find this work useful or interesting, we kindly invite you to star :star: the library!
 
