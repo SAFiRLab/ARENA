@@ -100,19 +100,6 @@ RUN /bin/bash -c "cd /home/pagmo2 && \
     apt-get install sudo && \
     sudo cmake --build . --target install"
 
-RUN git clone https://github.com/flexible-collision-library/fcl.git
-RUN /bin/bash -c "cd /home/fcl && \
-    mkdir build && \
-    cd build && \
-    source /opt/ros/humble/setup.bash && \
-    cmake .. \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DFCL_WITH_OCTOMAP=ON \
-        -DOCTOMAP_INCLUDE_DIR=/opt/ros/humble/include \
-        -DOCTOMAP_LIBRARY=/opt/ros/humble/lib/x86_64-linux-gnu/liboctomap.so && \
-    make -j4 && \
-    sudo make install"
-
 # Build the custom message workspace
 RUN /bin/bash -c "source /opt/ros/humble/setup.sh && \
     cd /home/dev_ws/src && \
