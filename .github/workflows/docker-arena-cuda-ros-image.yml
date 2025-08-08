@@ -4,16 +4,20 @@ on:
   push:
     branches: [main]
     paths:
-      - Dockerfile  # Only trigger when the Dockerfile is modified
+      - Dockerfile
   pull_request:
     branches: [main]
     paths:
-      - Dockerfile  # Only trigger when the Dockerfile is modified
+      - Dockerfile
   workflow_dispatch:  # This allows manual triggering
 
 jobs:
   docker-test:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout code
@@ -27,17 +31,46 @@ jobs:
       run: |
         docker run -d --name test-container arena-cuda-ros
         sleep 5  # give time for the container to start
-        docker ps -a  # check container status
+        docker ps -a
+
+    - name: test deployment
+      env:
+        trusted_deployers: ${{ secrets.TRUSTED_DEPLOYERS }}
+      if: github.event_name != 'pull_request' && contains(fromJSON(env.trusted_deployers), github.actor)
+      run: |
+        echo "=========================="
+        echo "TRUSTED ACTOR ${{ github.actor }}. Running tests."
+        echo "=========================="
+        exit 1
+
+    - name: Stop if actor not trusted
+      env:
+        trusted_deployers: ${{ secrets.TRUSTED_DEPLOYERS }}
+      if: github.event_name != 'pull_request' && !contains(fromJSON(env.trusted_deployers), github.actor)
+      run: |
+        echo "=========================="
+        echo "UNTRUSTED ACTOR ${{ github.actor }}. Stopping the job."
+        echo "=========================="
+        exit 1
 
     - name: Log in to Github Container Registry (GHCR)
+      env:
+        trusted_deployers: ${{ secrets.TRUSTED_DEPLOYERS }}
+      if: github.event_name != 'pull_request' && contains(fromJSON(env.trusted_deployers), github.actor)
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
   
     - name: Tag the image
+      env:
+        trusted_deployers: ${{ secrets.TRUSTED_DEPLOYERS }}
+      if: github.event_name != 'pull_request' && contains(fromJSON(env.trusted_deployers), github.actor)
       run: |
         IMAGE_NAME=$(echo "ghcr.io/${{ github.repository }}/arena-cuda-ros" | tr '[:upper:]' '[:lower:]')
         docker tag arena-cuda-ros "$IMAGE_NAME"
   
     - name: Push image
+      env:
+        trusted_deployers: ${{ secrets.TRUSTED_DEPLOYERS }}
+      if: github.event_name != 'pull_request' && contains(fromJSON(env.trusted_deployers), github.actor)
       run: |
         IMAGE_NAME=$(echo "ghcr.io/${{ github.repository }}/arena-cuda-ros" | tr '[:upper:]' '[:lower:]')
         docker push "$IMAGE_NAME"
