@@ -29,19 +29,9 @@ jobs:
 
     - name: Run Docker container
       run: |
-        docker run -d --name test-container arena-cuda-ros
+        docker run -d --name test-container --read-only --user 1000:1000 arena-cuda-ros
         sleep 5  # give time for the container to start
         docker ps -a
-
-    - name: test deployment
-      env:
-        trusted_deployers: ${{ secrets.TRUSTED_DEPLOYERS }}
-      if: github.event_name != 'pull_request' && contains(fromJSON(env.trusted_deployers), github.actor)
-      run: |
-        echo "=========================="
-        echo "TRUSTED ACTOR ${{ github.actor }}. Running tests."
-        echo "=========================="
-        exit 1
 
     - name: Stop if actor not trusted
       env:
@@ -49,9 +39,8 @@ jobs:
       if: github.event_name != 'pull_request' && !contains(fromJSON(env.trusted_deployers), github.actor)
       run: |
         echo "=========================="
-        echo "UNTRUSTED ACTOR ${{ github.actor }}. Stopping the job."
+        echo "UNTRUSTED ACTOR ${{ github.actor }}. Not deploying."
         echo "=========================="
-        exit 1
 
     - name: Log in to Github Container Registry (GHCR)
       env:
