@@ -188,7 +188,6 @@ public:
         old_nurbs_ = std::make_shared<arena_demos::OldNurbs>(control_points_vec, sample_size_, weights, degree);
 
         // Initialize the OMPL planner
-        ompl_planner_->setOctree(octree_);
         ompl_planner_->setSolvingTimeout(1.0);
         ompl_planner_->setProblemDimensions(3);
         ompl_planner_->getInitializer()->planner_ = std::make_shared<ompl::geometric::RRT>(ompl_planner_->getSpaceInformation());

@@ -41,9 +41,6 @@
 #include <Eigen/Dense>
 // OMPL
 #include <ompl/geometric/SimpleSetup.h>
-// Octomap
-#include <octomap/octomap.h>
-#include <octomap/OcTree.h>
 
 
 namespace arena_core
@@ -73,7 +70,7 @@ struct IPlanningInitializer
 
 /**
     * @brief OMPLPlanner is a class that provides an interface for planning using the OMPL library.
-    * It allows setting and getting planning parameters, such as start and goal states, octree for environment representation,
+    * It allows setting and getting planning parameters, such as start and goal states
     * and bounds for the planning problem. It also provides a method to perform the planning operation.
     *
     * @note This class is designed to be used with the OMPL library and requires proper initialization of the environment.
@@ -96,12 +93,6 @@ public:
      * @return A Eigen::VectorXd of the planning start.
      */
     Eigen::VectorXd getStart() const { return start_; };
-
-    /**
-     * @brief Get the Octree used for planning.
-     * @return A shared pointer to the Octree.
-     */
-    std::shared_ptr<octomap::OcTree> getOctree() const { return octree_; };
 
     /**
      * @brief Get the planning problem bounds
@@ -155,16 +146,6 @@ public:
     {
         assert(a_start.size() == dim_ && "OMPLPlanner::setStart() -> Start size does not match problem dimensions.");
         start_ = a_start;
-    };
-
-    /**
-     * @brief Set the Octree used for planning.
-     * @param a_octree A shared pointer to the Octree.
-     */
-    void setOctree(const std::shared_ptr<octomap::OcTree>& a_octree)
-    {
-        assert(a_octree != nullptr && "OMPLPlanner::setOctree() -> Octree cannot be null.");
-        octree_ = a_octree;
     };
 
     /**
@@ -241,7 +222,6 @@ private:
     /************* User-defined attributes *************/
     Eigen::VectorXd goal_; ///< The planning goal.
     Eigen::VectorXd start_; ///< The planning start.
-    std::shared_ptr<octomap::OcTree> octree_; ///< The Octree used for planning.
     ompl::base::RealVectorBounds bounds_; ///< The bounds for the planning problem.
     int dim_; ///< The number of dimensions in the planning problem.
     std::shared_ptr<IPlanningInitializer> initializer_; ///< The initializer for planning parameters.

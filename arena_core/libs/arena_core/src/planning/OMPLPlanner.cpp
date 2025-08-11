@@ -42,7 +42,7 @@ namespace arena_core
 
 OMPLPlanner::OMPLPlanner()
 : ompl::geometric::SimpleSetup(std::make_shared<ompl::base::RealVectorStateSpace>()),
-dim_(0), goal_(), start_(), octree_(nullptr), bounds_(ompl::base::RealVectorBounds(0)), 
+dim_(0), goal_(), start_(), bounds_(ompl::base::RealVectorBounds(0)), 
 initializer_(std::make_shared<IPlanningInitializer>()), solving_timeout_(1.0)
 {}
 
@@ -51,7 +51,6 @@ OMPLPlanner::~OMPLPlanner()
 
 void OMPLPlanner::initializePlanner()
 {
-    assert(octree_ != nullptr && "OMPLPlanner::initializePlanner() -> No Octree set for the planner.");
     assert(initializer_ != nullptr && "OMPLPlanner::initializePlanner() -> No initializer set for the planner.");
     assert(initializer_->isInitialized() && "OMPLPlanner::initializePlanner() -> Initializer is not fully set up.");
     assert(dim_ > 0 && "OMPLPlanner::initializePlanner() -> Problem dimensions must be set before initializing the planner.");

@@ -212,6 +212,7 @@ private:
     arena_core::EvalNurbsOutput linedrone_output_;
     std::shared_ptr<arena_demos::LinedroneNurbsAnalyzer> linedrone_nurbs_analyzer_;
     std::shared_ptr<octomap::ColorOcTree> color_octree_;
+    std::shared_ptr<octomap::OcTree> octree_;
     std::shared_ptr<arena_core::Nurbs<4>> nurbs_;
     std::shared_ptr<Eigen::MatrixXd> arena_path_;
     std::string map_file_path_ = "/home/dev_ws/src/arena_core/demos/ressources/saved_octomaps/CL_map_res_50cm.bt";
@@ -258,8 +259,8 @@ void LinedroneTestNode::inflatedOctomapCallback(const octomap_msgs::msg::Octomap
     }
 
     // Update the OMPL planner with the new octree
-    ompl_planner_->setOctree(octree);
-    ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OctomapStateValidityChecker>(ompl_planner_->getSpaceInformation(), octree);
+    octree_ = octree;
+    ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OctomapStateValidityChecker>(ompl_planner_->getSpaceInformation(), octree_);
 }
 
 void LinedroneTestNode::colorOctreeCallback(const octomap_msgs::msg::Octomap::SharedPtr msg)
@@ -627,8 +628,7 @@ void LinedroneTestNode::initializerPlanning()
     double max_y = -std::numeric_limits<double>::infinity();
     double max_z = -std::numeric_limits<double>::infinity();
 
-    auto octree = ompl_planner_->getOctree();
-    for (auto it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it)
+    for (auto it = octree_->begin_leafs(), end = octree_->end_leafs(); it != end; ++it)
     {
         const octomap::point3d& pt = it.getCoordinate();
 
@@ -927,7 +927,7 @@ void LinedroneTestNode::run()
     }
 
     // Perform the main logic of the node
-    if ((planning_activated_ && planning_goal_.goal_sent_))// || !isCurrentPathSafe())
+    if ((planning_activated_ && planning_goal_.goal_sent_) || !isCurrentPathSafe())
         initializerPlanning();
 }
 
