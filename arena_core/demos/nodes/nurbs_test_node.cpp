@@ -39,8 +39,9 @@
 #include "arena_core/math/nurbs.h"
 #include "arena_core/math/control_point.h"
 #include "arena_core/planning/OMPLPlanner.h"
-#include "arena_core/geometry/octomap_state_validity_checker.h"
+#include "arena_core/geometry/ompl_state_validity_checker.h"
 #include "linedrone/linedrone_nurbs_analyzer.h"
+#include "linedrone/costmap_mapping.h"
 // OLD locals
 #include "linedrone/nurbs_analyzer_old.h"
 #include "linedrone/old_nurbs.h"
@@ -60,9 +61,9 @@ class NurbsVisualizerNode : public rclcpp::Node
 {
 public:
     NurbsVisualizerNode()
-    : Node("nurbs_visualizer_node"), linedrone_config(50), color_octree_(std::make_shared<octomap::ColorOcTree>(1.0)),
-    octree_(std::make_shared<octomap::OcTree>(1.0)),
-    linedrone_nurbs_analyzer_(color_octree_.get(), linedrone_config, {}), ompl_planner_(std::make_shared<arena_core::OMPLPlanner>())
+    : Node("nurbs_visualizer_node"), linedrone_config(50), costmap_mapping_(std::make_shared<arena_demos::CostmapMapping>()),
+    color_octree_(std::make_shared<octomap::ColorOcTree>(0.5)),
+    linedrone_nurbs_analyzer_(nullptr), ompl_planner_(std::make_shared<arena_core::OMPLPlanner>())
     {
         marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("nurbs_marker", 10);
         color_octree_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("color_octree_marker", 10);
@@ -78,13 +79,17 @@ public:
         else
             RCLCPP_ERROR(get_logger(), "Failed to load octomap from %s", map_file_path_.c_str());
 
-        if (octree_->readBinary(map_file_path_))
+        costmap_mapping_->setColorOctree(color_octree_);
+
+        std::shared_ptr<octomap::OcTree> octree = std::make_shared<octomap::OcTree>(0.5);
+        if (octree->readBinary(map_file_path_))
         {
             RCLCPP_INFO(get_logger(), "Octree loaded successfully from %s", map_file_path_.c_str());
         }
         else
             RCLCPP_ERROR(get_logger(), "Failed to load octree from %s", map_file_path_.c_str());
 
+        costmap_mapping_->setOctree(octree);
 
         // Define the nurbs_analyzer configurations
         linedrone_config.robot_mass_ = 25.0; // Example mass in kg
@@ -95,7 +100,8 @@ public:
 
         linedrone_config.solveQuadraticSurfaceCoefficients();
 
-        linedrone_nurbs_analyzer_ = arena_demos::LinedroneNurbsAnalyzer(color_octree_.get(), linedrone_config, {});
+        linedrone_nurbs_analyzer_ = std::shared_ptr<arena_demos::LinedroneNurbsAnalyzer>(
+            new arena_demos::LinedroneNurbsAnalyzer(costmap_mapping_, linedrone_config, {}));
 
         // Old NURBS analyzer setup
         pipeline_config_old_.drone_speed_ = 2.0; // Example speed in m/s
@@ -192,7 +198,7 @@ public:
         ompl_planner_->setProblemDimensions(3);
         ompl_planner_->getInitializer()->planner_ = std::make_shared<ompl::geometric::RRT>(ompl_planner_->getSpaceInformation());
         ompl_planner_->getInitializer()->planner_->as<ompl::geometric::RRT>()->setRange(2.0);
-        ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OctomapStateValidityChecker>(ompl_planner_->getSpaceInformation(), octree_);
+        ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OMPLStateValidityChecker>(ompl_planner_->getSpaceInformation(), costmap_mapping_);
         ompl_planner_->getInitializer()->optimization_objective_ = nullptr;
 
         timer_ = this->create_wall_timer(500ms, std::bind(&NurbsVisualizerNode::publishAll, this));
@@ -256,7 +262,7 @@ private:
         eval_output->fitness_array_ = std::vector<double>(eval_output->fitness_size_, 0.0);
         eval_output->constraint_size_ = 2;
         eval_output->constraint_array_ = std::vector<double>(eval_output->constraint_size_, 0.0);
-        linedrone_nurbs_analyzer_.eval(pt, *eval_output);
+        linedrone_nurbs_analyzer_->eval(pt, *eval_output);
         end = std::chrono::high_resolution_clock::now();
         elapsed_ms = std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end - start);
         RCLCPP_INFO(this->get_logger(), "NURBS evaluation took: %f ms", elapsed_ms.count());
@@ -357,26 +363,11 @@ private:
         ompl_planner_->setGoal(goal);
 
         // Set the bounds for the OMPL planner
-        double min_x = std::numeric_limits<double>::infinity();
-        double min_y = std::numeric_limits<double>::infinity();
-        double min_z = std::numeric_limits<double>::infinity();
-        double max_x = -std::numeric_limits<double>::infinity();
-        double max_y = -std::numeric_limits<double>::infinity();
-        double max_z = -std::numeric_limits<double>::infinity();
+        Eigen::MatrixXd bounds = costmap_mapping_->getMapBounds();
+        Eigen::Vector3d min_bounds = bounds.row(0).transpose();
+        Eigen::Vector3d max_bounds = bounds.row(1).transpose();
 
-        for (auto it = octree_->begin_leafs(), end = octree_->end_leafs(); it != end; ++it)
-        {
-            const octomap::point3d& pt = it.getCoordinate();
-
-            if (pt.x() < min_x) min_x = pt.x();
-            if (pt.y() < min_y) min_y = pt.y();
-            if (pt.z() < min_z) min_z = pt.z();
-            if (pt.x() > max_x) max_x = pt.x();
-            if (pt.y() > max_y) max_y = pt.y();
-            if (pt.z() > max_z) max_z = pt.z();
-        }
-
-        ompl_planner_->setBounds(Eigen::Vector3d(min_x, min_y, min_z), Eigen::Vector3d(max_x, max_y, max_z));
+        ompl_planner_->setBounds(min_bounds, max_bounds);
         if (ompl_planner_->plan() == ompl::base::PlannerStatus::EXACT_SOLUTION || ompl_planner_->plan() == ompl::base::PlannerStatus::APPROXIMATE_SOLUTION)
         {
             RCLCPP_INFO(this->get_logger(), "OMPL planner found an exact solution");
@@ -513,9 +504,10 @@ private:
     std::shared_ptr<arena_core::Nurbs<4>> nurbs_;
     arena_demos::LinedroneNurbsAnalyzerConfig linedrone_config;
     arena_demos::LinedroneEvalNurbsOutput linedrone_output_;
-    arena_demos::LinedroneNurbsAnalyzer linedrone_nurbs_analyzer_;
+    std::shared_ptr<arena_demos::LinedroneNurbsAnalyzer> linedrone_nurbs_analyzer_;
+    std::shared_ptr<arena_demos::CostmapMapping> costmap_mapping_;
     std::shared_ptr<octomap::ColorOcTree> color_octree_;
-    std::shared_ptr<octomap::OcTree> octree_;
+
     std::string map_file_path_ = "/home/dev_ws/src/arena_core/demos/ressources/saved_octomaps/CL_map_res_50cm.bt";
     int sample_size_;
 

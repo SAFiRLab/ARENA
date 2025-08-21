@@ -32,6 +32,7 @@
 
 #pragma once
 
+
 // System
 #include <memory>
 #include <queue>
@@ -40,12 +41,11 @@
 #include <stdlib.h>
 
 // Octomap
-#include <octomap/OcTree.h>
 #include <octomap/ColorOcTree.h>
 #include <octomap/octomap.h>
 
 
-namespace arena_core
+namespace arena_demos
 {
 
 struct OcTreeKeyCompare 
@@ -92,21 +92,16 @@ public:
 private:
 
     // User-defined methods
-
-
-    // Functions
     void inflateOctree(float inflation_radius, float min_influence_radius, float max_influence_radius);
     float computeCollisionCost(float node_distance, float min_influence_radius, float max_influence_radius);
     
-    // User-defined variables
+    // User-defined attributes
     std::shared_ptr<octomap::OcTree> octree_;
     std::shared_ptr<octomap::ColorOcTree> color_octree_;
-
-    // Parameters
     float inflation_radius_ = 1.5;
     float min_influence_radius_ = 1.0;
     float max_influence_radius_ = 2.0;
 
 }; // class Costmap3D
 
-}; // namespace arena_core
+}; // namespace arena_demos

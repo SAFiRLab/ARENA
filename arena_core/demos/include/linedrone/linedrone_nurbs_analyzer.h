@@ -35,6 +35,7 @@
 // Local
 #include "arena_core/math/optimization/evaluation/INurbsAnalyzer.h"
 #include "arena_core/geometry/oriented_bounding_box_wrapper.h"
+#include "linedrone/costmap_mapping.h"
 
 // System
 #include <memory>
@@ -44,8 +45,6 @@
 // Eternal Libraries
 // Eigen
 #include <Eigen/Dense>
-// Octomap
-#include <octomap/ColorOcTree.h>
 
 
 namespace arena_demos
@@ -173,7 +172,7 @@ public:
     /**
      * @brief Default constructor for LinedroneNurbsAnalyzer.
      */
-    LinedroneNurbsAnalyzer(octomap::ColorOcTree* a_color_octree,
+    LinedroneNurbsAnalyzer(std::shared_ptr<arena_demos::CostmapMapping> a_costmap_mapping,
                         const LinedroneNurbsAnalyzerConfig& a_config,
                         const std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>& a_obbs);
 
@@ -191,18 +190,6 @@ public:
      * @param a_curve_points Matrix of control points for the NURBS curve.
      */
     void eval(const Eigen::MatrixXd& a_curve_points, arena_core::EvalNurbsOutput& a_output) final override;
-
-    /************* Setters **************/
-    void setColorOctree(octomap::ColorOcTree* a_color_octree)
-    {
-        if (!a_color_octree)
-        {
-            std::cerr << "LinedroneNurbsAnalyzer::setColorOctree => Color octree is null." << std::endl;
-            return;
-        }
-        
-        color_octree_ = a_color_octree;
-    }
 
 private:
 
@@ -223,9 +210,8 @@ private:
      * This method computes the collision cost for the NURBS curve by checking against the environment.
      *
      * @param a_point1 The first point of the NURBS curve segment.
-     * @param a_point2 The second point of the NURBS curve segment.
      */
-    void evalCollisionCost(const Eigen::Vector3d& a_point1, const Eigen::Vector3d& a_point2);
+    void evalCollisionCost(const Eigen::Vector3d& a_point1);
 
     /**
      * @brief Evaluate the insertion cost based on the NURBS curve and environment.
@@ -261,7 +247,7 @@ private:
                                     const double a_velocity_i, const double a_velocity_i_p_1, const double a_velocity_i_p_2);
 
     /************* User-defined attributes *************/
-    octomap::ColorOcTree* color_octree_; // Pointer to the color octree
+    std::shared_ptr<arena_demos::CostmapMapping> costmap_mapping_; // Pointer to the costmap mapping for collision checks
     LinedroneNurbsAnalyzerConfig linedrone_config; // Configuration for the analyzer
     std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper> obbs_; // OBBs for various objects
     LinedroneEvalNurbsOutput linedrone_output_; // Output structure for NURBS evaluation results
