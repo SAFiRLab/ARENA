@@ -143,4 +143,4 @@ Eigen::MatrixXd CostmapMapping::getMapBounds() const
 }
 
 
-}; // namespace arena_core
+}; // namespace arena_demos

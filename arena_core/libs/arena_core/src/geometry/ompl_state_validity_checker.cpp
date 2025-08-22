@@ -44,7 +44,7 @@ OMPLStateValidityChecker::OMPLStateValidityChecker(const ompl::base::SpaceInform
 : ompl::base::StateValidityChecker(si), mapping_(std::move(mapping)), step_(step)
 {
     if (!mapping_)
-        throw std::runtime_error("arena_core::OMPLStateValidityChecker(): Mapping isntance is null.");
+        throw std::runtime_error("arena_core::OMPLStateValidityChecker(): Mapping instance is null.");
 }
 
 bool OMPLStateValidityChecker::isValid(const ompl::base::State *state) const
@@ -57,8 +57,6 @@ bool OMPLStateValidityChecker::isValid(const ompl::base::State *state) const
 
     Eigen::Vector3d point(real_state->values[0], real_state->values[1], real_state->values[2]);
     return mapping_->isClearance(point, step_);
-
-    return true;
 }
 
 
