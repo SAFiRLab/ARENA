@@ -1,4 +1,4 @@
-add_executable(costmap_3D_node costmap_3D_node.cpp)
+add_executable(costmap_3D_node costmap_3D_node.cpp ${ARENA_DEMOS_SRCS})
 target_link_libraries(costmap_3D_node ${PROJECT_NAME}_arena_core)
 ament_target_dependencies(costmap_3D_node 
     rclcpp 

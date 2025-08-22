@@ -39,10 +39,10 @@
 namespace arena_demos
 {
 
-LinedroneNurbsAnalyzer::LinedroneNurbsAnalyzer(octomap::ColorOcTree* a_color_octree,
+LinedroneNurbsAnalyzer::LinedroneNurbsAnalyzer(std::shared_ptr<arena_demos::CostmapMapping> a_costmap_mapping,
                                                const LinedroneNurbsAnalyzerConfig& a_config,
                                                const std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>& a_obbs)
-    : color_octree_(a_color_octree),
+    : costmap_mapping_(a_costmap_mapping),
       linedrone_config(a_config),
       obbs_(a_obbs), 
       linedrone_output_(),
@@ -87,50 +87,24 @@ void LinedroneNurbsAnalyzer::evalTimeCost(const double a_distance, const double 
         linedrone_output_.time_output_ += a_distance / a_velocity; // Normal case
 }
 
-void LinedroneNurbsAnalyzer::evalCollisionCost(const Eigen::Vector3d& a_point1, const Eigen::Vector3d& a_point2)
+void LinedroneNurbsAnalyzer::evalCollisionCost(const Eigen::Vector3d& a_point1)
 {
-    double tree_depth = color_octree_->getTreeDepth();
-    octomap::point3d origin = octomap::point3d(a_point1.x(), a_point1.y(), a_point1.z());
-    
-    octomap::ColorOcTreeNode* node = color_octree_->search(origin, tree_depth);
-
-    if (node)
+    auto capability = costmap_mapping_->getCapability<arena_demos::CostSDFCapability>();
+    if (capability)
     {
-        octomap::ColorOcTreeNode::Color node_color = node->getColor();
-        double blue = double(uint8_t(node_color.b));
-        double node_collision_cost = 1.0 - (blue / 255.0); // Assuming blue channel indicates collision risk
+        double node_collision_cost = capability->getCollisionCost(a_point1);
         linedrone_output_.total_collision_cost_ += node_collision_cost;
         if (node_collision_cost > linedrone_output_.max_collision_cost_)
             linedrone_output_.max_collision_cost_ = node_collision_cost;
-
-        double occupancy = node->getOccupancy();
+        
+        double occupancy = capability->getOccupancy(a_point1);
         if (occupancy > linedrone_output_.max_occupancy_)
             linedrone_output_.max_occupancy_ = occupancy;
 
-            linedrone_output_.nb_of_collision_checks_++;
-    }
-    else
-    {
-        // If the node is not found, we assume no collision cost but still increment the check count
         linedrone_output_.nb_of_collision_checks_++;
     }
-
-    /*octomap::point3d end_point = octomap::point3d(a_point2.x(), a_point2.y(), a_point2.z());
-    octomap::point3d_collection ray_traced_points;
-    if (color_octree_->computeRay(origin, end_point, ray_traced_points))
-    {
-        for (const auto& point : ray_traced_points)
-        {
-            octomap::ColorOcTreeNode* ray_node = color_octree_->search(point, tree_depth);
-
-            if (ray_node)
-            {
-                double occupancy = ray_node->getOccupancy();
-                if (occupancy > linedrone_output_.max_occupancy_)
-                    linedrone_output_.max_occupancy_ = occupancy;
-            }
-        }
-    }*/
+    else
+        std::cerr << "CostmapMapping cannot provide CostSDFCapability, collision cost evaluation is skipped." << std::endl;
 }
 
 void LinedroneNurbsAnalyzer::evalEnergyCost(const Eigen::Vector3d& a_point_i_m_1, const Eigen::Vector3d& a_point_i, 
@@ -156,7 +130,7 @@ void LinedroneNurbsAnalyzer::evalEnergyCost(const Eigen::Vector3d& a_point_i_m_1
     double linedrone_coeff_F_squared = linedrone_config.F * linedrone_config.F;
     double sqrt_discriminant = sqrt(linedrone_coeff_F_squared - 4.0 * linedrone_config.C * 
                                (1 + linedrone_config.A * (roll_power * roll_power) + linedrone_config.B * (pitch_power * pitch_power)));
-    double denominator = 2.0 * linedrone_config.C;                               
+    double denominator = 2.0 * linedrone_config.C;
     double z1_power = (-linedrone_config.F + sqrt_discriminant) / denominator;
     double z2_power = (-linedrone_config.F - sqrt_discriminant) / denominator;
 
@@ -244,7 +218,7 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
         evalTimeCost(distance, velocity_DUA_i);
 
         // Evaluate collision cost between point1 and point2
-        evalCollisionCost(point1, point2);
+        evalCollisionCost(point1);
 
         // Evaluate insertion cost (if needed, currently not implemented)
         //if (!obbs_.empty())
@@ -281,7 +255,7 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
         evalTimeCost(distance, velocity_DUA_i);
 
         // Evaluate collision cost for the last segment
-        evalCollisionCost(point1, point2);
+        evalCollisionCost(point1);
 
         // Evaluate insertion cost (if needed, currently not implemented)
         //if (!obbs_.empty())
@@ -311,22 +285,7 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
 
     Eigen::Map<const Eigen::Vector3d> last_point(a_curve_points.col(linedrone_config.base_config.sample_size - 1).data());
 
-    double tree_depth = color_octree_->getTreeDepth();
-    octomap::ColorOcTreeNode* node = color_octree_->search(octomap::point3d(last_point.x(), last_point.y(), last_point.z()), tree_depth);
-
-    if (node)
-    {
-        octomap::ColorOcTreeNode::Color node_color = node->getColor();
-        double blue = double(uint8_t(node_color.b));
-        double node_collision_cost = 1.0 - double(blue / 255.0); // Assuming blue channel indicates collision risk
-        linedrone_output_.total_collision_cost_ += node_collision_cost;
-        if (node_collision_cost > linedrone_output_.max_collision_cost_)
-            linedrone_output_.max_collision_cost_ = node_collision_cost;
-
-        linedrone_output_.nb_of_collision_checks_++;
-    }
-    else
-        linedrone_output_.nb_of_collision_checks_++;
+    evalCollisionCost(last_point);
 
     // if (!obbs_.empty())
     //    evalInsertionCost(last_point); // Placeholder for insertion cost evaluation

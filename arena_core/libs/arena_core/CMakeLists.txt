@@ -1,7 +1,6 @@
 # Library sources
 set(ARENA_CORE_SRCS
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/geometry/octomap_state_validity_checker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/mapping/costmap_3D.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/geometry/ompl_state_validity_checker.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/planning/OMPLPlanner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/math/algorithm/adaptive_voting_algorithm.cpp
 )

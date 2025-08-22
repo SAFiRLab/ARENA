@@ -30,10 +30,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "arena_core/mapping/costmap_3D.h"
+#include "linedrone/costmap_3D.h"
 
 
-namespace arena_core
+namespace arena_demos
 {
 
 Costmap3D::Costmap3D()
@@ -238,4 +238,4 @@ float Costmap3D::computeCollisionCost(float node_distance, float min_influence_r
     //return (max_influence_radius - node_distance) / (max_influence_radius - min_influence_radius);
 }
 
-}; // namespace arena_core
+}; // namespace arena_demos

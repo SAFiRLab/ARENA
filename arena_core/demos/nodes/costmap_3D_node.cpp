@@ -31,7 +31,7 @@
  */
 
 // Local
-#include "arena_core/mapping/costmap_3D.h"
+#include "linedrone/costmap_3D.h"
 
 // ROS
 #include "rclcpp/rclcpp.hpp"
@@ -114,7 +114,7 @@ private:
     void publishColorOctomap(const std::shared_ptr<octomap::ColorOcTree> octree);
 
     // User-defined attributes
-    std::unique_ptr<Costmap3D> costmap_3d_;
+    std::unique_ptr<arena_demos::Costmap3D> costmap_3d_;
     bool has_loaded_bt_file_ = false;
     std::shared_ptr<octomap::OcTree> loaded_octree_;
 
@@ -336,7 +336,7 @@ void ARENACostmapNode::printStatus()
 
 
 ARENACostmapNode::ARENACostmapNode(rclcpp::NodeOptions options)
-: Node("costmap_3D_node", options), costmap_3d_(std::make_unique<Costmap3D>())
+: Node("costmap_3D_node", options), costmap_3d_(std::make_unique<arena_demos::Costmap3D>())
 {
     // Parameters
     costmap_3d_->setInflationRadius(this->get_parameter("navigation.3d.inflation_radius").as_double());

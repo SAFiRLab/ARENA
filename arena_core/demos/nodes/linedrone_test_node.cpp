@@ -43,19 +43,17 @@
 #include "arena_core/math/nurbs.h"
 #include "arena_core/math/control_point.h"
 #include "arena_core/planning/OMPLPlanner.h"
-#include "arena_core/geometry/octomap_state_validity_checker.h"
+#include "arena_core/geometry/ompl_state_validity_checker.h"
 #include "arena_core/math/algorithm/adaptive_voting_algorithm.h"
 #include "linedrone/linedrone_nurbs_analyzer.h"
 #include "linedrone/linedrone_problem.hpp"
+#include "linedrone/costmap_mapping.h"
 
 // External Libraries
 // Eigen
 #include <Eigen/Dense>
 // Pagmo
 #include <pagmo/algorithms/nsga2.hpp>
-// Octomap
-#include <octomap/ColorOcTree.h>
-#include <octomap/OcTree.h>
 // OMPL
 #include <ompl/geometric/planners/rrt/RRT.h>
 #include <ompl/base/spaces/RealVectorStateSpace.h>
@@ -211,10 +209,9 @@ private:
     arena_demos::LinedroneNurbsAnalyzerConfig linedrone_config;
     arena_core::EvalNurbsOutput linedrone_output_;
     std::shared_ptr<arena_demos::LinedroneNurbsAnalyzer> linedrone_nurbs_analyzer_;
-    std::shared_ptr<octomap::ColorOcTree> color_octree_;
+    std::shared_ptr<arena_demos::CostmapMapping> costmap_mapping_;
     std::shared_ptr<arena_core::Nurbs<4>> nurbs_;
     std::shared_ptr<Eigen::MatrixXd> arena_path_;
-    std::string map_file_path_ = "/home/dev_ws/src/arena_core/demos/ressources/saved_octomaps/CL_map_res_50cm.bt";
     bool planning_activated_ = false;
     bool path_planned_ = false;
     GoalStatus planning_goal_;
@@ -257,24 +254,24 @@ void LinedroneTestNode::inflatedOctomapCallback(const octomap_msgs::msg::Octomap
         return;
     }
 
-    // Update the OMPL planner with the new octree
-    ompl_planner_->setOctree(octree);
-    ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OctomapStateValidityChecker>(ompl_planner_->getSpaceInformation(), octree);
+    // Set the octree in the costmap mapping
+    if (costmap_mapping_)
+        costmap_mapping_->setOctree(octree);
 }
 
 void LinedroneTestNode::colorOctreeCallback(const octomap_msgs::msg::Octomap::SharedPtr msg)
 {
-    color_octree_ = std::dynamic_pointer_cast<octomap::ColorOcTree>(std::shared_ptr<octomap::AbstractOcTree>(octomap_msgs::fullMsgToMap(*msg)));
+    auto color_octree = std::dynamic_pointer_cast<octomap::ColorOcTree>(std::shared_ptr<octomap::AbstractOcTree>(octomap_msgs::fullMsgToMap(*msg)));
     
-    if (!color_octree_)
+    if (!color_octree)
     {
         RCLCPP_ERROR(this->get_logger(), "Failed to convert Octomap message to ColorOcTree.");
         return;
     }
 
-    // Update the linedrone nurbs analyzer with the new octree
-    if (linedrone_nurbs_analyzer_)
-        linedrone_nurbs_analyzer_->setColorOctree(color_octree_.get());
+    // Set the color octree in the costmap mapping
+    if (costmap_mapping_)
+        costmap_mapping_->setColorOctree(color_octree);
 }
 
 
@@ -620,27 +617,11 @@ void LinedroneTestNode::initializerPlanning()
     }
 
     // Set the bounds for the OMPL planner
-    double min_x = std::numeric_limits<double>::infinity();
-    double min_y = std::numeric_limits<double>::infinity();
-    double min_z = std::numeric_limits<double>::infinity();
-    double max_x = -std::numeric_limits<double>::infinity();
-    double max_y = -std::numeric_limits<double>::infinity();
-    double max_z = -std::numeric_limits<double>::infinity();
+    Eigen::MatrixXd bounds = costmap_mapping_->getMapBounds();
+    Eigen::Vector3d min_bounds = bounds.row(0).transpose();
+    Eigen::Vector3d max_bounds = bounds.row(1).transpose();
 
-    auto octree = ompl_planner_->getOctree();
-    for (auto it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it)
-    {
-        const octomap::point3d& pt = it.getCoordinate();
-
-        if (pt.x() < min_x) min_x = pt.x();
-        if (pt.y() < min_y) min_y = pt.y();
-        if (pt.z() < min_z) min_z = pt.z();
-        if (pt.x() > max_x) max_x = pt.x();
-        if (pt.y() > max_y) max_y = pt.y();
-        if (pt.z() > max_z) max_z = pt.z();
-    }
-
-    ompl_planner_->setBounds(Eigen::Vector3d(min_x, min_y, min_z), Eigen::Vector3d(max_x, max_y, max_z));
+    ompl_planner_->setBounds(min_bounds, max_bounds);
 
     // Set the start state for the OMPL planner
     Eigen::Vector3d start_state(95.367, 15.637, 6.376);
@@ -877,9 +858,6 @@ bool LinedroneTestNode::isCurrentPathSafe() const
     if (!arena_path_)
         return false;
 
-    if (!color_octree_)
-        return true; // If no octree is available, we assume the path is safe
-
     if (arena_path_->cols() == 0)
         return false;
     
@@ -893,24 +871,15 @@ bool LinedroneTestNode::isCurrentPathSafe() const
     // Check if the path is safe by checking for collisions with the octree
     for (int i = 0; i < arena_path_->cols() - 1; ++i)
     {
-        octomap::point3d start(arena_path_->col(i)(0), arena_path_->col(i)(1), arena_path_->col(i)(2));
-        octomap::point3d end(arena_path_->col(i + 1)(0), arena_path_->col(i + 1)(1), arena_path_->col(i + 1)(2));
+        Eigen::Vector3d start = (*arena_path_).col(i);
+        Eigen::Vector3d end = (*arena_path_).col(i + 1);
 
-        octomap::point3d_collection collection_ray;
-        if (color_octree_->computeRay(start, end, collection_ray))
+        // Check if the segment between start and end is in collision with the octree
+        if (costmap_mapping_ && costmap_mapping_->isOccupiedRayTracing(start, end))
         {
-            for (const auto& point : collection_ray)
-            {
-                octomap::ColorOcTreeNode* node = color_octree_->search(point);
-                if (node)
-                {
-                    if (color_octree_->isNodeOccupied(*node))
-                    {
-                        RCLCPP_WARN(get_logger(), "Collision detected at point (%f, %f, %f)", point.x(), point.y(), point.z());
-                        return false; // Collision detected
-                    }
-                }
-            }
+            RCLCPP_WARN(get_logger(), "Collision detected along the path segment from (%f, %f, %f) to (%f, %f, %f).",
+                        start.x(), start.y(), start.z(), end.x(), end.y(), end.z());
+            return false; // Collision detected
         }
     }
     
@@ -927,12 +896,12 @@ void LinedroneTestNode::run()
     }
 
     // Perform the main logic of the node
-    if ((planning_activated_ && planning_goal_.goal_sent_))// || !isCurrentPathSafe())
+    if ((planning_activated_ && planning_goal_.goal_sent_) || !isCurrentPathSafe())
         initializerPlanning();
 }
 
 LinedroneTestNode::LinedroneTestNode(rclcpp::NodeOptions options)
-: Node("linedrone_test_node", options), linedrone_config(50), color_octree_(std::make_shared<octomap::ColorOcTree>(1.0)),
+: Node("linedrone_test_node", options), linedrone_config(50), costmap_mapping_(std::make_shared<arena_demos::CostmapMapping>()),
   linedrone_nurbs_analyzer_(nullptr), ompl_planner_(nullptr), nurbs_(nullptr), arena_path_(nullptr)
 {
     // ROS Publisher Initialization
@@ -962,7 +931,7 @@ LinedroneTestNode::LinedroneTestNode(rclcpp::NodeOptions options)
     linedrone_config.robot_permanent_power_descent_ = this->get_parameter("robot.permanent_power.descent").as_double(); // Watts
     linedrone_config.solveQuadraticSurfaceCoefficients();
 
-    linedrone_nurbs_analyzer_ = std::make_shared<arena_demos::LinedroneNurbsAnalyzer>(color_octree_.get(), 
+    linedrone_nurbs_analyzer_ = std::make_shared<arena_demos::LinedroneNurbsAnalyzer>(costmap_mapping_,
                                                                                       linedrone_config, 
                                                                                       std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>{});
     
@@ -980,7 +949,7 @@ LinedroneTestNode::LinedroneTestNode(rclcpp::NodeOptions options)
     ompl_planner_->getInitializer()->planner_ = std::make_shared<ompl::geometric::RRT>(ompl_planner_->getSpaceInformation());
     double rrt_range = this->get_parameter("optimization.initialization.rrt_range").as_double();
     ompl_planner_->getInitializer()->planner_->as<ompl::geometric::RRT>()->setRange(rrt_range);
-    ompl_planner_->getInitializer()->state_validity_checker_ = nullptr;
+    ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OMPLStateValidityChecker>(ompl_planner_->getSpaceInformation(), costmap_mapping_);
     ompl_planner_->getInitializer()->optimization_objective_ = nullptr;
 
     // Initialize the NURBS API
