@@ -13,7 +13,7 @@ Authors:
 
 <p align="center"><strong>ARENA demo with the linedrone problem</strong></p>
 <p align = "center">
-<img src="doc/images/demo_arena_linedrone_gif.gif" width="60%" title="Arena demonstration in a power line simulated environment">
+<img src="docs/images/demo_arena_linedrone_gif.gif" width="60%" title="Arena demonstration in a power line simulated environment">
 </p>
 <p align="center"><strong>*Keep in mind that this is a slowed representation of the optimization process as we show all solution sets throughout optimization.</strong></p>
 <p align="center"><strong>Hyperparameters for this demo</strong></p>
@@ -46,30 +46,30 @@ As of now, the algorithm has been only applied to real UAV power line inspection
 
 <p align="center"><strong>Real flights in a simulated power line inspection scenario</strong></p>
 <p align = "center">
-<img src="doc/images/real_flight_scenarios.png" width="45%" title="Real flights in a simulated power line inspection scenario">
-<img src="doc/images/real_flight_scenarios_visualization.png" width="45%" title="RVIZ visualization of real flights in simulated power line inspection scenario">
+<img src="docs/images/real_flight_scenarios.png" width="45%" title="Real flights in a simulated power line inspection scenario">
+<img src="docs/images/real_flight_scenarios_visualization.png" width="45%" title="RVIZ visualization of real flights in simulated power line inspection scenario">
 </p>
 
 In the UAV power line inspection scenario, we optimize for time, safety, and energy. We can see trajectories in green staying further from obstacles, trajectories in pink being faster and more energy-efficient, and trajectories in white being a mix of every objective.
 
 <p align="center"><strong>Pareto front visualization after optimization</strong></p>
 <p align = "center">
-<img src="doc/images/pareto_front_visualization.png" title="Pareto front visualization" width="60%">
+<img src="docs/images/pareto_front_visualization.png" title="Pareto front visualization" width="60%">
 </p>
 
 After the genetic-based optimization, the ARENA framework proposes a Pareto front of optimized trajectories answering different multiple situations.
 
 <p align="center"><strong>Trajectories according to different sets of mission risks for an inspection UAV</strong></p>
 <p align = "center">
-<img src="doc/images/trajectories_according_to_risks_construction_site.png" width="45%" title="Optimized trajectories that would have been chosen in different risks scenarios in an urban construction site">
-<img src="doc/images/trajectories_according_to_risks_power_lines.png" width="45%" title="Optimized trajectories that would have been chosen in different risks scenarios on power lines">
+<img src="docs/images/trajectories_according_to_risks_construction_site.png" width="45%" title="Optimized trajectories that would have been chosen in different risks scenarios in an urban construction site">
+<img src="docs/images/trajectories_according_to_risks_power_lines.png" width="45%" title="Optimized trajectories that would have been chosen in different risks scenarios on power lines">
 </p>
 
 Our voting algorithm is adapted for any amount of objectives, as long as a factor for each one comes from evolving mission risks. You can also fix objective weight as a design intent.
 
 <p align="center"><strong>Voting algorithm schematic</strong></p>
 <p align = "center">
-<img src="doc/images/voting_algorithm.png" title="Pareto front visualization" width="60%">
+<img src="docs/images/voting_algorithm.png" title="Pareto front visualization" width="60%">
 </p>
 
 

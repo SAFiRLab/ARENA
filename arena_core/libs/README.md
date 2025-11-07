@@ -1,7 +1,7 @@
 # Code Usage
 
 <p align = "center">
-<img src="../../doc/images/ARENA_API.png" width="75%" title="ARENA API">
+<img src="../../docs/images/ARENA_API.png" width="75%" title="ARENA API">
 </p>
 
 The class ownership diagram above shows the relationship between the classes in ARENA and its dependencies. For example, **Nurbs** are defined using **ControlPoints** and their dimensions must be the same. The **INurbsAnalyzer** doesn't own **EvalNurbsOutput** but uses one in its argument to fill the evaluation output. 
