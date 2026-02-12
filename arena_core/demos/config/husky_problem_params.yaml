@@ -1,0 +1,23 @@
+husky_test_node:
+    ros__parameters:
+        robot:
+            max_speed: 0.5                           # Speed of the robot in m/s
+            max_acceleration: 2.2                    # Acceleration of the robot in m/s^2 and has been taken from flight logs
+            mass: 20.0                           # Mass of the robot in kg
+        optimization:
+            initialization:
+                timeout: 1.0                       # Maximum time for RRT in seconds
+                rrt_range: 5.0                        # Distance between nodes in the RRT
+            sample_size: 50                      # Number of points along a curve
+            NSGA-II:
+                population_size: 40                     # Number of individuals in the population
+                generations: 1000                      # Number of generations
+                mutation_params: 
+                    distribution_index: 20.0             # Distribution index of the mutation
+                crossover_params:
+                    distribution_index: 20.0             # Distribution index of the crossover
+                    probability: 0.9                     # Probability of crossover
+            adaptive_costs_weights:
+                time: 1.0                            # Weight of the time cost
+                safety: 0.0                        # Weight of the safety cost
+                energy: 0.0                          # Weight of the energy cost

@@ -90,7 +90,7 @@ Taking for granted an up-to-date version of docker has been installed and docker
 
 1. Build the container image using OS specified script in [scripts](./scripts) (this can take awhile)
 2. Run the container image using OS specified script in [scripts](./scripts)
-3. In the container: ```colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DENABLE_ROS2```
+3. In the container: ```colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DENABLE_ROS2=ON```
 
 We recommend using [VSCode](https://code.visualstudio.com/) with the dev container for remote explorer [extension](https://code.visualstudio.com/docs/remote/remote-overview) since you can easily launch multiple terminals and therefore launch multiple ROS2 nodes at the same time.
 

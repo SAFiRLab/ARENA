@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     ssh \
     sudo \
     gdb \
+    vim \
     rapidjson-dev \
     libwebsocketpp-dev \
     libboost-all-dev \
@@ -36,7 +37,10 @@ RUN sh -c 'echo "deb [arch=$(dpkg --print-architecture)] http://packages.ros.org
 
 # Update and install ROS 2 Humble
 RUN apt-get update && apt-get install -y \
-    ros-humble-desktop && \
+    ros-humble-desktop \
+    ros-humble-xacro \
+    ros-humble-ros2-control \
+    ros-humble-ros2-controllers && \
     rm -rf /var/lib/apt/lists/*
 
 # Set up locale for ROS
@@ -64,6 +68,8 @@ RUN mkdir -p /home/dev_ws/src
 # Clone ROS repositories
 RUN git clone https://github.com/facontidavide/rosx_introspection.git /home/dev_ws/src/rosx_introspection
 RUN git clone https://github.com/Unity-Technologies/ROS-TCP-Endpoint.git /home/dev_ws/src/ros_tcp_endpoint -b ROS2v0.7.0
+RUN git clone https://github.com/SAFiRLab/clearpath_robots_sim.git /home/dev_ws/src/clearpath_robots_sim
+RUN /bin/bash -c "cd /home/dev_ws/src/clearpath_robots_sim && git fetch && git checkout -b mpc_controller origin/mpc_controller && git pull"
 RUN apt-get update && apt install -y ros-humble-foxglove-bridge
 
 # Build the workspace
@@ -81,6 +87,7 @@ RUN apt-get update && apt-get install -y \
     ros-humble-octomap \
     ros-humble-octomap-ros \
     ros-humble-octomap-server \
+    ros-humble-grid-map \
     libjsoncpp-dev \
     libsecret-1-dev \
     libccd-dev && \

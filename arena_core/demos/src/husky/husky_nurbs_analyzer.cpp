@@ -30,55 +30,40 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "husky/husky_nurbs_analyzer.h"
+
 // System
-#include <iostream>
-#include <functional>
-
-// External libraries
-// Pagmo2
-#include <pagmo/algorithm.hpp>
-#include <pagmo/algorithms/sade.hpp>
-#include <pagmo/archipelago.hpp>
-#include <pagmo/problem.hpp>
-#include <pagmo/problems/schwefel.hpp>
-#include <pagmo/algorithms/nsga2.hpp>
+#include <vector>
 
 
-int total_fitness_evals = 0;
-
-int main()
+namespace arena_demos
 {
-    pagmo::problem prob{pagmo::schwefel(30)};
 
+HuskyNurbsAnalyzer::HuskyNurbsAnalyzer(const HuskyNurbsAnalyzerConfig& a_config)
+    : husky_config_(a_config),
+      husky_output_(),
+      arena_core::INurbsAnalyzer(a_config.base_config)
+{}
 
-    // 2 - Instantiate a pagmo algorithm (self-adaptive differential
+void HuskyNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_core::EvalNurbsOutput& a_output)
+{
+    if (a_output.fitness_array_.empty())
+        throw std::runtime_error("Fitness array is empty. Please initialize it before evaluation.");
+    
+    if (a_output.fitness_array_.size() != a_output.fitness_size_)
+        throw std::runtime_error("Fitness array size does not match the expected fitness output size.");
 
-    // evolution, 100 generations).
+    if (a_output.constraint_size_ > 0 && a_output.constraint_array_.empty())
+        throw std::runtime_error("Constraint array is empty but constraint size is greater than zero. Please initialize it before evaluation.");
 
-    pagmo::algorithm algo{pagmo::sade(100)};
+    if (a_output.constraint_size_ > 0 && a_output.constraint_array_.size() != a_output.constraint_size_)
+        throw std::runtime_error("Constraint array size does not match the expected constraint output size.");
+    
+    // TODO
 
-
-    // 3 - Instantiate an archipelago with 16 islands having each 20 individuals.
-
-    pagmo::archipelago archi{16u, algo, prob, 20u};
-
-
-    // 4 - Run the evolution in parallel on the 16 separate islands 10 times.
-
-    archi.evolve(10);
-
-
-    // 5 - Wait for the evolutions to finish.
-
-    archi.wait_check();
-
-
-    // 6 - Print the fitness of the best solution in each island.
-
-    for (const auto &isl : archi) {
-
-        std::cout << isl.get_population().champion_f()[0] << '\n';
-
-    }
-
+    husky_output_ = HuskyEvalNurbsOutput();
 }
+
+
+
+}; // arena_demos
