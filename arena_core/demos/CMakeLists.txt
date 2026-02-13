@@ -39,6 +39,7 @@ set(ARENA_DEMOS_HUSKY_SRCS
     ${ARENA_DEMOS_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/husky/husky_problem.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/husky/husky_nurbs_analyzer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/husky/mapping/traversability_map.cpp
 )
 
 add_subdirectory(nodes)

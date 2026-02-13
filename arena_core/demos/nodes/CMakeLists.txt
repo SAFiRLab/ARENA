@@ -59,9 +59,9 @@ ament_target_dependencies(husky_test_node
     grid_map_pcl
 )
 
-add_executable(elevation_map_node husky/elevation_map_node.cpp)
-target_link_libraries(elevation_map_node ${PROJECT_NAME}_arena_core yaml-cpp)
-ament_target_dependencies(elevation_map_node 
+add_executable(traversability_map_node husky/traversability_map_node.cpp ${ARENA_DEMOS_HUSKY_SRCS})
+target_link_libraries(traversability_map_node ${PROJECT_NAME}_arena_core yaml-cpp)
+ament_target_dependencies(traversability_map_node 
     rclcpp 
     visualization_msgs
     tf2_ros
@@ -84,6 +84,6 @@ install(TARGETS
   mpc_controller_node
   linedrone_test_node
   husky_test_node
-  elevation_map_node
+  traversability_map_node
   DESTINATION lib/${PROJECT_NAME}
 )

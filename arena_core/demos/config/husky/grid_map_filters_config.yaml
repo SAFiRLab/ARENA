@@ -1,4 +1,4 @@
-elevation_map_node:
+traversability_map_node:
   ros__parameters:
 
     filter_chain.filter2.name: "smooth"
