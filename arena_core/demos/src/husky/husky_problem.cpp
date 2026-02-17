@@ -62,9 +62,9 @@ namespace pagmo
 
     husky_problem::husky_problem(vector_double::size_type dim, vector_double::size_type fdim, 
                    fitness_eval_callback* fitness_eval, double* x_bounds, 
-                   double* y_bounds, double* z_bounds, double drone_speed)
+                   double* y_bounds, double robot_speed)
     : m_dim(dim), m_fdim(fdim), m_fitness_eval(fitness_eval), m_x_bounds(x_bounds), 
-      m_y_bounds(y_bounds), m_z_bounds(z_bounds), m_drone_speed(drone_speed)
+      m_y_bounds(y_bounds), m_robot_speed_(robot_speed)
 {
     if (fdim < 2u) {
         pagmo_throw(std::invalid_argument,
@@ -83,7 +83,7 @@ namespace pagmo
     if (m_fitness_eval == nullptr) {
         pagmo_throw(std::invalid_argument, "The fitness evaluation callback cannot be null.");
     }
-    if (m_x_bounds == nullptr || m_y_bounds == nullptr || m_z_bounds == nullptr) {
+    if (m_x_bounds == nullptr || m_y_bounds == nullptr) {
         pagmo_throw(std::invalid_argument, "The bounds cannot be null.");
     }
 }
@@ -123,17 +123,16 @@ std::pair<vector_double, vector_double> husky_problem::get_bounds() const
     lb[0] = 0.0;
     ub[0] = 10.0;
 
-    for (vector_double::size_type i = 1; i < m_dim - 1; i+=5) {
+    for (vector_double::size_type i = 1; i < m_dim - 1; i+=4)
+    {
         lb[i] = m_x_bounds[0];
         ub[i] = m_x_bounds[1];
         lb[i+1] = m_y_bounds[0];
         ub[i+1] = m_y_bounds[1];
-        lb[i+2] = m_z_bounds[0];
-        ub[i+2] = m_z_bounds[1];
+        lb[i+2] = 0.0;
+        ub[i+2] = m_robot_speed_;
         lb[i+3] = 0.0;
-        ub[i+3] = m_drone_speed;
-        lb[i+4] = 0.0;
-        ub[i+4] = 10.0;
+        ub[i+3] = 10.0;
     }
 
     lb[m_dim - 1] = 0.0;

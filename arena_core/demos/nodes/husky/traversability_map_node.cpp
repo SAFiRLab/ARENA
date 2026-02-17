@@ -32,7 +32,7 @@ public:
         global_pub_ = this->create_publisher<grid_map_msgs::msg::GridMap>("/global_grid_map", rclcpp::QoS(1).transient_local());
 
         // Slow global publishing
-        global_timer_ = this->create_wall_timer(std::chrono::seconds(2), std::bind(&TraversabilityMappingNode::publishGlobalMap, this));
+        global_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), std::bind(&TraversabilityMappingNode::publishGlobalMap, this));
     }
 
 private:

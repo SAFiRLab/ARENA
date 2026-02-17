@@ -34,16 +34,49 @@
 
 // System
 #include <vector>
+#include <iostream>
 
 
 namespace arena_demos
 {
 
-HuskyNurbsAnalyzer::HuskyNurbsAnalyzer(const HuskyNurbsAnalyzerConfig& a_config)
-    : husky_config_(a_config),
+HuskyNurbsAnalyzer::HuskyNurbsAnalyzer(std::shared_ptr<arena_demos::TraversabilityCostmap> a_traversability_costmap,
+                                       const HuskyNurbsAnalyzerConfig& a_config)
+    : traversability_mapping_(a_traversability_costmap),
+      husky_config_(a_config),
       husky_output_(),
       arena_core::INurbsAnalyzer(a_config.base_config)
 {}
+
+void HuskyNurbsAnalyzer::evalTimeCost(const double a_distance, const double a_velocity)
+{
+    if (a_velocity <= 1.0e-6)
+    {
+        husky_output_.time_output_ += a_distance / (a_velocity + 1.0e-6); // Prevent division by zero or very small velocity
+    }
+    else
+        husky_output_.time_output_ += a_distance / a_velocity; // Normal case
+}
+
+void HuskyNurbsAnalyzer::evalSafetyCost(const Eigen::Vector2d& a_point1)
+{
+    auto capability = traversability_mapping_->getCapability<arena_demos::TraversabilityCostCapability>();
+    if (capability)
+    {
+        double node_collision_cost = capability->getTraversabilityCost(a_point1);
+        husky_output_.total_collision_cost_ += node_collision_cost;
+        if (node_collision_cost > husky_output_.max_collision_cost_)
+            husky_output_.max_collision_cost_ = node_collision_cost;
+        
+        double occupancy = capability->getOccupancy(a_point1);
+        if (occupancy > husky_output_.max_occupancy_)
+            husky_output_.max_occupancy_ = occupancy;
+
+        husky_output_.nb_of_collision_checks_++;
+    }
+    else
+        std::cerr << "CostmapMapping cannot provide CostSDFCapability, collision cost evaluation is skipped." << std::endl;
+}
 
 void HuskyNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_core::EvalNurbsOutput& a_output)
 {
@@ -60,6 +93,96 @@ void HuskyNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_core:
         throw std::runtime_error("Constraint array size does not match the expected constraint output size.");
     
     // TODO
+
+    for (unsigned int i = 0; i < husky_config_.base_config.sample_size - 1; i++)
+    {
+        Eigen::Map<const Eigen::Vector2d> point1(a_curve_points.col(i).data());
+        Eigen::Map<const Eigen::Vector2d> point2(a_curve_points.col(i + 1).data());
+
+        // Evaluate time cost between point1 and point2
+        double velocity_i = a_curve_points(2, i); // Assuming the 3th column is velocity
+        double velocity_i_p1 = a_curve_points(2, i + 1);
+        double distance = (point2 - point1).norm();
+        double velocity_DUA_i = (velocity_i + velocity_i_p1) / 2.0; // Assuming the 3th column is velocity
+        evalTimeCost(distance, velocity_DUA_i);
+
+        // Evaluate safety cost between point1 and point2
+        evalSafetyCost(point1);
+
+        // Evaluate acceleration constraint and energy cost
+        /*if (i > 0)
+        {
+            Eigen::Map<const Eigen::Vector3d> point0(a_curve_points.col(i - 1).data());
+            Eigen::Map<const Eigen::Vector3d> point4(a_curve_points.col(i + 3).data());
+
+            double velocity_i_m_1 = a_curve_points(3, i - 1);
+            double velocity_i_p2 = a_curve_points(3, i + 2);
+
+            evalAccelerationConstraint(point0, point1, point2, point3, point4,
+                                       velocity_i_m_1, velocity_i, velocity_i_p1, velocity_i_p2);
+            evalEnergyCost(point0, point1, point2, velocity_i, velocity_i_p1);
+        }
+        else
+            evalEnergyCost(point1, point1, point2, velocity_i, velocity_i_p1);*/
+    }
+
+    // Handle the last segments
+    /*for (unsigned int i = linedrone_config.base_config.sample_size - 3; i < linedrone_config.base_config.sample_size - 1; i++)
+    {
+        Eigen::Map<const Eigen::Vector3d> point1(a_curve_points.col(i).data());
+        Eigen::Map<const Eigen::Vector3d> point2(a_curve_points.col(i + 1).data());
+
+        // Evaluate time cost for the last segment
+        double velocity_i = a_curve_points(3, i);
+        double velocity_i_p1 = a_curve_points(3, i + 1);
+        double distance = (point2 - point1).norm();
+        double velocity_DUA_i = (velocity_i + velocity_i_p1) / 2.0; // Assuming the 4th column is velocity
+        evalTimeCost(distance, velocity_DUA_i);
+
+        // Evaluate collision cost for the last segment
+        evalCollisionCost(point1);
+
+        // Evaluate insertion cost (if needed, currently not implemented)
+        //if (!obbs_.empty())
+            //evalInsertionCost(point1, point2); // Placeholder for insertion cost evaluation
+
+        // Evaluate energy cost
+        if (i < linedrone_config.base_config.sample_size - 2)
+        {
+            if (i > 0)
+            {
+                Eigen::Map<const Eigen::Vector3d> point0(a_curve_points.col(i - 1).data());
+                evalEnergyCost(point0, point1, point2, velocity_i, velocity_i_p1);
+            }
+            else
+                evalEnergyCost(point1, point1, point2, velocity_i, velocity_i_p1);
+            
+        }
+        else
+        {
+            if (i > 0)
+            {
+                Eigen::Map<const Eigen::Vector3d> point0(a_curve_points.col(i - 1).data());
+                evalEnergyCost(point0, point1, point2, velocity_i, velocity_i_p1);
+            }
+        }
+    }*/
+
+    Eigen::Map<const Eigen::Vector2d> last_point(a_curve_points.col(husky_config_.base_config.sample_size - 1).data());
+
+    evalSafetyCost(last_point);
+
+    // if (!obbs_.empty())
+    //    evalInsertionCost(last_point); // Placeholder for insertion cost evaluation
+
+    // Set the output values
+    a_output.fitness_array_[0] = husky_output_.time_output_;
+    a_output.fitness_array_[1] = (husky_output_.total_collision_cost_ / husky_output_.nb_of_collision_checks_) + husky_output_.max_collision_cost_;
+
+    //a_output.fitness_array_[2] = linedrone_output_.total_energy_;
+
+    //a_output.constraint_array_[0] = linedrone_output_.max_acceleration_;
+    a_output.constraint_array_[0] = husky_output_.max_occupancy_;
 
     husky_output_ = HuskyEvalNurbsOutput();
 }

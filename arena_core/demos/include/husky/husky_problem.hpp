@@ -59,7 +59,7 @@ public:
 
     husky_problem(vector_double::size_type dim = 5u, vector_double::size_type fdim = 3u, 
                    fitness_eval_callback* fitness_eval = nullptr, double* x_bounds = nullptr, 
-                   double* y_bounds = nullptr, double* z_bounds = nullptr, double drone_speed = 1.0);
+                   double* y_bounds = nullptr, double robot_speed = 1.0);
 
     ~husky_problem();
 
@@ -108,8 +108,7 @@ private:
     // bounds
     double* m_x_bounds;
     double* m_y_bounds;
-    double* m_z_bounds;
-    double m_drone_speed;
+    double m_robot_speed_;
 
 }; // class husky_problem
 

@@ -57,6 +57,8 @@ ament_target_dependencies(husky_test_node
     geometry_msgs
     grid_map_core
     grid_map_pcl
+    grid_map_msgs
+    grid_map_ros
 )
 
 add_executable(traversability_map_node husky/traversability_map_node.cpp ${ARENA_DEMOS_HUSKY_SRCS})

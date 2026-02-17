@@ -23,6 +23,7 @@ void TraversabilityMap::initializeMaps(const grid_map::Position &a_center)
     global_map_->add("sum");
     global_map_->add("slope");
     global_map_->add("occupancy");
+    global_map_->add("cost");
     global_map_->setFrameId("world");
 
     global_map_->setGeometry(grid_map::Length(200.0, 200.0), 0.3, a_center);
@@ -32,6 +33,7 @@ void TraversabilityMap::initializeMaps(const grid_map::Position &a_center)
     (*global_map_)["sum"].setZero();
     (*global_map_)["slope"].setConstant(std::numeric_limits<float>::quiet_NaN());
     (*global_map_)["occupancy"].setConstant(std::numeric_limits<float>::quiet_NaN());
+    (*global_map_)["cost"].setConstant(std::numeric_limits<double>::quiet_NaN());
 
     // ----- LOCAL MAP -----
     local_map_ = std::make_shared<grid_map::GridMap>(std::vector<std::string>{"elevation"});
@@ -89,6 +91,7 @@ void TraversabilityMap::updateMap(const pcl::PointCloud<pcl::PointXYZ> &a_cloud)
         global_map_->at("count", index) += 1.0f;
     }
 
+    double max_cost = 0.0;
     // Update elevation layer
     for (grid_map::GridMapIterator it(*global_map_); !it.isPastEnd(); ++it)
     {
@@ -100,7 +103,15 @@ void TraversabilityMap::updateMap(const pcl::PointCloud<pcl::PointXYZ> &a_cloud)
         updateStepAtIter(it);
         updateSlopeAtIter(it);
         updateOccupancyAtIter(it);
+
+        double cost = 0.0;
+        updateCostAtIter(it, cost);
+
+        if (cost > max_cost)
+            max_cost = cost;
     }
+
+    //normalizeCosts(max_cost);
 }
 
 void TraversabilityMap::updateStepAtIter(const grid_map::GridMapIterator &it)
@@ -248,5 +259,67 @@ void TraversabilityMap::updateOccupancyAtIter(const grid_map::GridMapIterator &i
 
     global_map_->at("occupancy", index) = occupied ? 1.0f : 0.0f;
 }
+
+void TraversabilityMap::updateCostAtIter(const grid_map::GridMapIterator &it, double &a_cost)
+{
+    const grid_map::Index index = *it;
+
+    if (!global_map_->isValid(index, "elevation"))
+    {
+        global_map_->at("cost", index) = std::numeric_limits<float>::quiet_NaN();
+        return;
+    }
+
+    // Hard occupancy
+    if (global_map_->isValid(index, "occupancy"))
+    {
+        if (global_map_->at("occupancy", index) > 0.5f)
+        {
+            global_map_->at("cost", index) = std::numeric_limits<float>::quiet_NaN();
+            return;
+        }
+    }
+
+    float slope = 0.0f;
+    float step  = 0.0f;
+
+    if (global_map_->isValid(index, "slope"))
+        slope = global_map_->at("slope", index);
+
+    if (global_map_->isValid(index, "step"))
+        step = global_map_->at("step", index);
+
+    // ---- TUNABLE WEIGHTS ----
+    const float w_slope = 10.0f;
+    const float w_step  = 50.0f;
+
+    a_cost = w_slope * slope + w_step * step;
+
+    if (!std::isfinite(global_map_->at("cost", index)))
+        a_cost += 1000.0;   // Penalize unknown areas
+
+    global_map_->at("cost", index) = a_cost;
+}
+
+void TraversabilityMap::normalizeCosts(const double a_max_cost)
+{
+    if (a_max_cost <= 0.0)
+        return;
+
+    for (grid_map::GridMapIterator it(*global_map_); !it.isPastEnd(); ++it)
+    {
+        grid_map::Index index = *it;
+
+        if (!global_map_->isValid(index, "cost"))
+            continue;
+
+        double cost = global_map_->at("cost", index);
+
+        cost /= a_max_cost;
+
+        global_map_->at("cost", index) = cost;
+    }
+}
+
 
 }; // namespace arena_demos

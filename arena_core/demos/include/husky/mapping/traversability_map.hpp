@@ -51,6 +51,8 @@ private:
     void updateStepAtIter(const grid_map::GridMapIterator &it);
     void updateSlopeAtIter(const grid_map::GridMapIterator &it);
     void updateOccupancyAtIter(const grid_map::GridMapIterator &it);
+    void updateCostAtIter(const grid_map::GridMapIterator &it, double &a_cost);
+    void normalizeCosts(const double a_max_cost);
 
     // User-defined attirbutes
     std::shared_ptr<grid_map::GridMap> global_map_;

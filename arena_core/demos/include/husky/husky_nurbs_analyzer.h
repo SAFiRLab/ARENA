@@ -34,7 +34,7 @@
 
 // Local
 #include "arena_core/math/optimization/evaluation/INurbsAnalyzer.h"
-#include "arena_core/geometry/oriented_bounding_box_wrapper.h"
+#include "husky/mapping/traversability_costmap.hpp"
 
 // System
 #include <memory>
@@ -105,7 +105,8 @@ public:
     /**
      * @brief Default constructor for HuskyNurbsAnalyzer.
      */
-    HuskyNurbsAnalyzer(const HuskyNurbsAnalyzerConfig& a_config);
+    HuskyNurbsAnalyzer(std::shared_ptr<arena_demos::TraversabilityCostmap> a_traversability_costmap,
+                       const HuskyNurbsAnalyzerConfig& a_config);
 
     /**
      * @brief Destructor for HuskyNurbsAnalyzer.
@@ -122,11 +123,31 @@ public:
      */
     void eval(const Eigen::MatrixXd& a_curve_points, arena_core::EvalNurbsOutput& a_output) final override;
 
+    /**
+     * @brief Evaluate the time cost based on distance and velocity.
+     * This method computes the time cost for a given distance and velocity.
+     *
+     * @param a_distance The distance to evaluate.
+     * @param a_velocity The velocity at which the distance is covered.
+     */
+    void evalTimeCost(const double a_distance, const double a_velocity);
+    
+    //void evalInsertionCost(Eigen::Vector3d& a_point1, )
+
+    /**
+     * @brief Evaluate the safety cost based on the NURBS curve and environment.
+     * This method computes the safety cost for the NURBS curve by checking against the environment.
+     *
+     * @param a_point1 The first point of the NURBS curve segment.
+     */
+    void evalSafetyCost(const Eigen::Vector2d& a_point1);
+
 private:
 
     /************* User-defined methods *************/
 
     /************* User-defined attributes *************/
+    std::shared_ptr<arena_demos::TraversabilityCostmap> traversability_mapping_; // Pointer to the costmap mapping for collision checks
     HuskyNurbsAnalyzerConfig husky_config_; // Configuration for the analyzer
     HuskyEvalNurbsOutput husky_output_; // Output structure for NURBS evaluation results
 

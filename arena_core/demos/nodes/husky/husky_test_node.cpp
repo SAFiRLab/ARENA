@@ -35,7 +35,9 @@
 #include "visualization_msgs/msg/marker.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include <grid_map_msgs/msg/grid_map.hpp>
 
 // Local
 #include "arena_core/math/nurbs.h"
@@ -57,6 +59,7 @@
 #include <ompl/base/objectives/PathLengthOptimizationObjective.h>
 // Grid_Map
 #include <grid_map_pcl/grid_map_pcl.hpp>
+#include <grid_map_ros/grid_map_ros.hpp>
 
 // System
 #include <numeric>
@@ -69,7 +72,7 @@ using namespace std::chrono_literals;
 struct GoalStatus
 {
     bool goal_sent_ = false;
-    Eigen::Vector3d goal_;
+    Eigen::Vector2d goal_;
 }; // struct GoalStatus
 
 
@@ -123,7 +126,7 @@ private:
      * @param dv The pagmo vector_double to convert.
      * @return A vector of ControlPoint objects.
      */
-    std::vector<arena_core::ControlPoint<double, 4>> pagmoDVToControlPoints(const pagmo::vector_double& dv) const;
+    std::vector<arena_core::ControlPoint<double, 3>> pagmoDVToControlPoints(const pagmo::vector_double& dv) const;
 
     Eigen::MatrixXd addControlPointsToPath(const Eigen::MatrixXd& initial_control_points, const int nb_of_control_points) const;
 
@@ -171,6 +174,8 @@ private:
     // ROS Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr goal_pose_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr planning_activation_sub_;
+    rclcpp::Subscription<grid_map_msgs::msg::GridMap>::SharedPtr global_grid_map_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr robot_pose_sub_;
 
     // ROS namespace
     std::string ros_namespace_ = "husky_test_node";
@@ -188,11 +193,24 @@ private:
      */
     void planningActivationCallback(const std_msgs::msg::Bool::SharedPtr msg);
 
+    /** @brief Callback for the global grid_map subscription.
+     * This function is called when a new global grid_map is received.
+     * @param msg The message containing the global grid_map.
+     */
+    void globalGridMapCallback(const grid_map_msgs::msg::GridMap::SharedPtr msg);
+
+    /** @brief Callback for the robot pose subscription.
+    * This function is called when a new robot pose is received.
+    * @param msg The message containing the robot pose.
+    */
+    void robotPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+
     /****************** User-Defined Attributes *******************/
     arena_demos::HuskyNurbsAnalyzerConfig husky_config;
     arena_core::EvalNurbsOutput husky_output_;
     std::shared_ptr<arena_demos::HuskyNurbsAnalyzer> husky_nurbs_analyzer_;
-    std::shared_ptr<arena_core::Nurbs<4>> nurbs_;
+    std::shared_ptr<arena_demos::TraversabilityCostmap> traversability_mapping_;
+    std::shared_ptr<arena_core::Nurbs<3>> nurbs_;
     std::shared_ptr<Eigen::MatrixXd> arena_path_;
     bool planning_activated_ = false;
     bool path_planned_ = false;
@@ -201,8 +219,9 @@ private:
     // For the OMPL planner
     std::shared_ptr<arena_core::OMPLPlanner> ompl_planner_;
     std::vector<Eigen::MatrixXd> initial_paths_;
-    Eigen::Vector3d start_point_;
-    Eigen::Vector3d goal_point_;
+    Eigen::Vector2d start_point_;
+    Eigen::Vector3d current_robot_pose_;
+    Eigen::Vector2d goal_point_;
 
     // For optimization
     size_t population_size_ = 0;
@@ -213,7 +232,7 @@ private:
 // ROS subscriptions callback implementations
 void HuskyTestNode::goalPoseCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
 {
-    planning_goal_.goal_ = Eigen::Vector3d(msg->point.x, msg->point.y, msg->point.z);
+    planning_goal_.goal_ = Eigen::Vector2d(msg->point.x, msg->point.y);
     planning_goal_.goal_sent_ = true;
 
     ompl_planner_->setGoal(planning_goal_.goal_);
@@ -226,6 +245,21 @@ void HuskyTestNode::planningActivationCallback(const std_msgs::msg::Bool::Shared
     planning_goal_.goal_sent_ = false;
 }
 
+void HuskyTestNode::globalGridMapCallback(const grid_map_msgs::msg::GridMap::SharedPtr msg)
+{
+    auto global_grid_map = std::make_shared<grid_map::GridMap>();
+    grid_map::GridMapRosConverter::fromMessage(*msg, *global_grid_map);
+
+    if (traversability_mapping_)
+        traversability_mapping_->setGlobalMap(global_grid_map);
+}
+
+void HuskyTestNode::robotPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+{
+    current_robot_pose_ = Eigen::Vector3d(msg->pose.position.x, msg->pose.position.y, msg->pose.position.z);
+    start_point_ = current_robot_pose_.head<2>();
+}
+
 // ROS publishers implementations
 void HuskyTestNode::publishARENAPath()
 {
@@ -235,7 +269,7 @@ void HuskyTestNode::publishARENAPath()
     visualization_msgs::msg::MarkerArray arena_markers;
     visualization_msgs::msg::Marker path_marker, velocities_marker;
 
-    path_marker.header.frame_id = "map";
+    path_marker.header.frame_id = "world";
     path_marker.header.stamp = this->now();
     path_marker.ns = "arena_path";
     path_marker.id = 0;
@@ -261,7 +295,17 @@ void HuskyTestNode::publishARENAPath()
         geometry_msgs::msg::Point p;
         p.x = (*arena_path_)(0, i);
         p.y = (*arena_path_)(1, i);
-        p.z = (*arena_path_)(2, i);
+        Eigen::Vector2d point_2d = Eigen::Vector2d(p.x, p.y);
+        
+        // Get the elevation from the traversability mapping
+        auto cap = traversability_mapping_->getCapability<arena_demos::TraversabilityCostCapability>();
+        double elevation = cap->getElevationAt(point_2d);
+        if (!std::isfinite(elevation))
+        {
+            p.z = 0.0;
+        }
+        else
+            p.z = elevation;
 
         path_marker.points.push_back(p);
 
@@ -274,8 +318,8 @@ void HuskyTestNode::publishARENAPath()
         velocity_sphere.action = visualization_msgs::msg::Marker::ADD;
         velocity_sphere.pose.position = p;
         velocity_sphere.pose.orientation.w = 1.0; // No rotation
-        velocity_sphere.color.r = fabs((*arena_path_)(3, i) / husky_config.robot_max_speed_);
-        velocity_sphere.color.g = 1.0 - fabs((*arena_path_)(3, i) / husky_config.robot_max_speed_);
+        velocity_sphere.color.r = fabs((*arena_path_)(2, i) / husky_config.robot_max_speed_);
+        velocity_sphere.color.g = 1.0 - fabs((*arena_path_)(2, i) / husky_config.robot_max_speed_);
         velocity_sphere.color.b = 0.0f;
         velocity_sphere.color.a = 1.0f; // Fully opaque
 
@@ -294,7 +338,7 @@ void HuskyTestNode::publishControlPoints()
         return;
 
     visualization_msgs::msg::Marker control_points_marker;
-    control_points_marker.header.frame_id = "map";
+    control_points_marker.header.frame_id = "world";
     control_points_marker.header.stamp = this->now();
     control_points_marker.ns = "control_points";
     control_points_marker.id = 0;
@@ -313,7 +357,17 @@ void HuskyTestNode::publishControlPoints()
         geometry_msgs::msg::Point p;
         p.x = cp.getValues()(0);
         p.y = cp.getValues()(1);
-        p.z = cp.getValues()(2);
+        Eigen::Vector2d point_2d = Eigen::Vector2d(p.x, p.y);
+        
+        // Get the elevation from the traversability mapping
+        auto cap = traversability_mapping_->getCapability<arena_demos::TraversabilityCostCapability>();
+        double elevation = cap->getElevationAt(point_2d);
+        if (!std::isfinite(elevation))
+        {
+            p.z = 0.0;
+        }
+        else
+            p.z = elevation;
 
         control_points_marker.points.push_back(p);
         control_points_marker.colors.push_back(control_points_marker.color);
@@ -336,7 +390,7 @@ void HuskyTestNode::publishOMPLPlannerPaths()
     {
         const auto& path = initial_paths_[i];
         visualization_msgs::msg::Marker path_marker;
-        path_marker.header.frame_id = "map";
+        path_marker.header.frame_id = "world";
         path_marker.header.stamp = this->now();
         path_marker.ns = "ompl_planner_path_";
         path_marker.id = i;
@@ -353,7 +407,17 @@ void HuskyTestNode::publishOMPLPlannerPaths()
             geometry_msgs::msg::Point p;
             p.x = path(0, j);
             p.y = path(1, j);
-            p.z = path(2, j);
+            Eigen::Vector2d point_2d = Eigen::Vector2d(p.x, p.y);
+
+            // Get the elevation from the traversability mapping
+            auto cap = traversability_mapping_->getCapability<arena_demos::TraversabilityCostCapability>();
+            double elevation = cap->getElevationAt(point_2d);
+            if (!std::isfinite(elevation))
+            {
+                p.z = 0.0;
+            }
+            else
+                p.z = elevation;
 
             path_marker.points.push_back(p);
         }
@@ -365,28 +429,143 @@ void HuskyTestNode::publishOMPLPlannerPaths()
 }
 
 void HuskyTestNode::publishSolutionSet(const pagmo::population& pop)
-{}
-
-std::vector<arena_core::ControlPoint<double, 4>> HuskyTestNode::pagmoDVToControlPoints(const pagmo::vector_double& dv) const
 {
-    std::vector<arena_core::ControlPoint<double, 4>> control_points;
+    // Publish solution set as a marker array of paths
+    visualization_msgs::msg::MarkerArray solution_set_marker_array;
+
+    // Get the max fitness values and store them for normalization and path coloring
+    double max_time = 0.0;
+    double min_time = std::numeric_limits<double>::max();
+    double max_safety = 0.0;
+    double min_safety = std::numeric_limits<double>::max();
+    /*double max_energy = 0.0;
+    double min_energy = std::numeric_limits<double>::max();*/
+    for (int i = 0; i < pop.size(); i++)
+    {
+        pagmo::vector_double fitness = pop.get_f()[i];
+        if (fitness[0] > max_time)
+            max_time = fitness[0];
+        if (fitness[0] < min_time)
+            min_time = fitness[0];
+
+        if (fitness[1] > max_safety)
+            max_safety = fitness[1];
+        if (fitness[1] < min_safety)
+            min_safety = fitness[1];
+
+        /*if (fitness[2] > max_energy)
+            max_energy = fitness[2];
+        if (fitness[2] < min_energy)
+            min_energy = fitness[2];*/
+    }
+
+    double min_value = 0.0;
+    double max_value = std::max({max_time, max_safety});//, max_energy});
+
+    // Create lambda function to rescale the fitness values to [min_value, max_value] according to the fitness function's own max value
+    auto rescale_time = [min_value, max_value, min_time, max_time](double value) -> double
+    {
+        /*if (max_time == min_time)
+            return min_value;*/
+        //return min_value + (max_value - min_value) * (value - min_time) / (max_time - min_time);
+        return (value - min_time) / (max_time - min_time);
+    };
+
+    auto rescale_safety = [min_value, max_value, min_safety, max_safety](double value) -> double
+    {
+        /*if (max_safety == min_safety)
+            return min_value;*/
+        //return min_value + (max_value - min_value) * (value - min_safety) / (max_safety - min_safety);
+        return (value - min_safety) / (max_safety - min_safety);
+    };
+
+    /*auto rescale_energy = [min_value, max_value, min_energy, max_energy](double value) -> double
+    {
+        /*if (max_energy == min_energy)
+            return min_value;
+        //return min_value + (max_value - min_value) * (value - min_energy) / (max_energy - min_energy);
+        return (value - min_energy) / (max_energy - min_energy);
+    };*/
+
+    for (int i = 0; i < pop.size(); i++)
+    {
+        visualization_msgs::msg::Marker pose_marker;
+        pose_marker.header.frame_id = "world"; 
+        pose_marker.header.stamp = this->now();
+        pose_marker.ns = "solution_set";
+        pose_marker.id = i;
+        pose_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+        pose_marker.action = visualization_msgs::msg::Marker::ADD;
+
+        std::vector<arena_core::ControlPoint<double, 3>> control_points = pagmoDVToControlPoints(pop.get_x()[i]);
+        nurbs_->setControlPoints(control_points);
+        Eigen::MatrixXd curve_points = nurbs_->evaluate();
+        
+        for (int j = 0; j < curve_points.cols(); j++)
+        {
+            geometry_msgs::msg::Point a_point;
+            a_point.x = curve_points(0, j);
+            a_point.y = curve_points(1, j);
+
+            Eigen::Vector2d point_2d = Eigen::Vector2d(a_point.x, a_point.y);
+            
+            // Get the elevation from the traversability mapping
+            auto cap = traversability_mapping_->getCapability<arena_demos::TraversabilityCostCapability>();
+            double elevation = cap->getElevationAt(point_2d);
+            if (!std::isfinite(elevation))
+            {
+                a_point.z = 0.0;
+            }
+            else
+                a_point.z = elevation;
+            pose_marker.points.push_back(a_point);
+        }
+
+        pose_marker.scale.x = 0.3;
+        pose_marker.scale.y = 0.3;
+        pose_marker.scale.z = 0.3;
+        pose_marker.color.a = 0.5;
+        
+        pagmo::vector_double fitness = pop.get_f()[i];
+        // Set color based on fitness values (red:=time, green:=safety, blue:=curvature)
+        // The lower the fitness value, the more intense the color
+        pose_marker.color.r = 1 - rescale_time(fitness[0]);// / max_value;
+        if (std::isinf(pose_marker.color.r) || std::isnan(pose_marker.color.r) || std::isinf(-pose_marker.color.r) || std::isnan(-pose_marker.color.r))
+            pose_marker.color.r = 1.0;
+        pose_marker.color.g = 1 - rescale_safety(fitness[1]);// / max_value;
+        if (std::isinf(pose_marker.color.g) || std::isnan(pose_marker.color.g) || std::isinf(-pose_marker.color.g) || std::isnan(-pose_marker.color.g))
+            pose_marker.color.g = 1.0;
+        /*pose_marker.color.b = 1 - rescale_energy(fitness[2]);// / max_value;
+        if (std::isinf(pose_marker.color.b) || std::isnan(pose_marker.color.b) || std::isinf(-pose_marker.color.b) || std::isnan(-pose_marker.color.b))
+            pose_marker.color.b = 1.0;*/
+        pose_marker.color.b = 0.0;
+
+        solution_set_marker_array.markers.push_back(pose_marker);
+    }
+
+    solution_set_pub_->publish(solution_set_marker_array);
+}
+
+std::vector<arena_core::ControlPoint<double, 3>> HuskyTestNode::pagmoDVToControlPoints(const pagmo::vector_double& dv) const
+{
+    std::vector<arena_core::ControlPoint<double, 3>> control_points;
 
     // Push first control point
-    Eigen::VectorXd start(4);
-    start << start_point_(0), start_point_(1), start_point_(2), 0.0; // Assuming the 4th dimension is velocity
-    control_points.push_back(arena_core::ControlPoint<double, 4>(start, dv[0]));
+    Eigen::VectorXd start(3);
+    start << start_point_(0), start_point_(1), 0.0; // Assuming the 3th dimension is velocity
+    control_points.push_back(arena_core::ControlPoint<double, 3>(start, dv[0]));
 
-    for (int i = 1; i < dv.size() - 1; i += 5)
+    for (int i = 1; i < dv.size() - 1; i += 4)
     {
-        Eigen::VectorXd cp(4);
-        cp << dv[i], dv[i + 1], dv[i + 2], dv[i + 3]; // Assuming the 4th dimension is velocity
-        control_points.push_back(arena_core::ControlPoint<double, 4>(cp, dv[i + 4]));
+        Eigen::VectorXd cp(3);
+        cp << dv[i], dv[i + 1], dv[i + 2]; // Assuming the 3th dimension is velocity
+        control_points.push_back(arena_core::ControlPoint<double, 3>(cp, dv[i + 3]));
     }
 
     // Push the last control point
-    Eigen::VectorXd end(4);
-    end << goal_point_(0), goal_point_(1), goal_point_(2), 0.0; // Assuming the 4th dimension is velocity
-    control_points.push_back(arena_core::ControlPoint<double, 4>(end, dv[dv.size() - 1]));
+    Eigen::VectorXd end(3);
+    end << goal_point_(0), goal_point_(1), 0.0; // Assuming the 3th dimension is velocity
+    control_points.push_back(arena_core::ControlPoint<double, 3>(end, dv[dv.size() - 1]));
 
     return control_points;
 }
@@ -456,7 +635,7 @@ void HuskyTestNode::initializerPlanning()
             // Publish empty path to clear previous visualizations
             visualization_msgs::msg::MarkerArray empty_path;
             visualization_msgs::msg::Marker empty_marker;
-            empty_marker.header.frame_id = "map";
+            empty_marker.header.frame_id = "world";
             empty_marker.header.stamp = this->now();
 
             arena_path_pub_->publish(empty_path);
@@ -464,12 +643,14 @@ void HuskyTestNode::initializerPlanning()
     }
 
     // Set the bounds for the OMPL planner
-    // TODO
+    Eigen::MatrixXd bounds = traversability_mapping_->getMapBounds();
+    Eigen::Vector2d min_bounds = bounds.row(0).transpose();
+    Eigen::Vector2d max_bounds = bounds.row(1).transpose();
+
+    ompl_planner_->setBounds(min_bounds, max_bounds);
 
     // Set the start state for the OMPL planner
-    Eigen::Vector3d start_state(95.367, 15.637, 6.376);
-    start_point_ = start_state;
-    ompl_planner_->setStart(start_state);
+    ompl_planner_->setStart(start_point_);
 
     int successive_failed_planning_attempts = 0;
     // Start timer for initialization process
@@ -483,20 +664,19 @@ void HuskyTestNode::initializerPlanning()
             ompl::geometric::PathGeometric* path = ompl_planner_->getProblemDefinition()->getSolutionPath()->as<ompl::geometric::PathGeometric>();
             if (path)
             {
-                Eigen::MatrixXd path_matrix(4, path->getStateCount());
+                Eigen::MatrixXd path_matrix(3, path->getStateCount());
                 for (size_t i = 0; i < path->getStateCount(); ++i)
                 {
                     const ompl::base::State* state = path->getState(i);
                     const auto* real_state = state->as<ompl::base::RealVectorStateSpace::StateType>();
                     path_matrix(0, i) = real_state->values[0];
                     path_matrix(1, i) = real_state->values[1];
-                    path_matrix(2, i) = real_state->values[2];
-                    if (i>0 && i < path->getStateCount() - 1)
+                    if (i > 0 && i < path->getStateCount() - 1)
                     {
-                        path_matrix(3, i) = husky_config.robot_max_speed_ * 0.25; // Assuming the 4th dimension is velocity
+                        path_matrix(2, i) = husky_config.robot_max_speed_ * 0.25; // Assuming the 3th dimension is velocity
                     }
                     else
-                        path_matrix(3, i) = 0.0; // No velocity at the start and end points
+                        path_matrix(2, i) = 0.0; // No velocity at the start and end points
                 }
 
                 initial_paths_.push_back(path_matrix);
@@ -533,7 +713,25 @@ pagmo::vector_double HuskyTestNode::huskyFitness(const pagmo::vector_double& dv)
     if (!nurbs_)
         throw std::runtime_error("huskyFitness => NURBS is not initialized.");
 
-    return pagmo::vector_double();
+    husky_output_.fitness_array_[0] = std::numeric_limits<double>::max();
+    husky_output_.fitness_array_[1] = std::numeric_limits<double>::max();
+    husky_output_.constraint_array_[0] = std::numeric_limits<double>::max();
+    
+    std::vector<arena_core::ControlPoint<double, 3>> control_points = pagmoDVToControlPoints(dv);
+    nurbs_->setControlPoints(control_points);
+    Eigen::MatrixXd pt = nurbs_->evaluate();
+
+    // Evaluate the NURBS curve using the Husky NURBS Analyzer
+    husky_nurbs_analyzer_->eval(pt, husky_output_);
+    
+    if (husky_output_.constraint_array_[0] > 0.5)
+    {
+        // Reject the solution if it's in collision with the environment
+        husky_output_.fitness_array_[0] = std::numeric_limits<double>::max();
+        husky_output_.fitness_array_[1] = std::numeric_limits<double>::max();
+    }
+
+    return husky_output_.fitness_array_;
 }
 
 void HuskyTestNode::ARENAOptimization()
@@ -577,13 +775,11 @@ void HuskyTestNode::ARENAOptimization()
     std::pair<Eigen::VectorXd, Eigen::VectorXd> bounds = ompl_planner_->getBounds();
     double* x_bounds = new double[2] {bounds.first(0), bounds.second(0)};
     double* y_bounds = new double[2] {bounds.first(1), bounds.second(1)};
-    double* z_bounds = new double[2] {bounds.first(2), bounds.second(2)};
-    pagmo::problem prob_husky{pagmo::husky_problem((nb_of_control_points - 2) * 4 + nb_of_control_points,
-                                                           3u,
+    pagmo::problem prob_husky{pagmo::husky_problem((nb_of_control_points - 2) * 3 + nb_of_control_points,
+                                                           2u,
                                                            &fitness_eval_cb,
                                                            x_bounds,
                                                            y_bounds,
-                                                           z_bounds,
                                                            husky_config.robot_max_speed_)};
     RCLCPP_INFO(get_logger(), "ARENAOptimization => Problem created");
     std::cout << prob_husky << std::endl;
@@ -605,8 +801,7 @@ void HuskyTestNode::ARENAOptimization()
         {
             dv.push_back(initial_paths_[i](0, j)); // X coordinate
             dv.push_back(initial_paths_[i](1, j)); // Y coordinate
-            dv.push_back(initial_paths_[i](2, j)); // Z coordinate
-            dv.push_back(initial_paths_[i](3, j)); // Velocity
+            dv.push_back(initial_paths_[i](2, j)); // Velocity
             dv.push_back(1.0); // Weight of the control point
         }
         dv.push_back(1.0); // Weight of the last control point
@@ -629,7 +824,7 @@ void HuskyTestNode::ARENAOptimization()
     for (int i = 0; i < pop_husky.size(); i++)
     {
         pagmo::vector_double fitness = pop_husky.get_f()[i];
-        if (fitness[0] == std::numeric_limits<double>::max() || fitness[1] == std::numeric_limits<double>::max() || fitness[2] == std::numeric_limits<double>::max())
+        if (fitness[0] == std::numeric_limits<double>::max() || fitness[1] == std::numeric_limits<double>::max())
             to_remove.push_back(i);
     }
 
@@ -649,12 +844,12 @@ void HuskyTestNode::ARENAOptimization()
     std::vector<double> costs_weights;
     costs_weights.push_back(this->get_parameter("optimization.adaptive_costs_weights.time").as_double());
     costs_weights.push_back(this->get_parameter("optimization.adaptive_costs_weights.safety").as_double());
-    costs_weights.push_back(this->get_parameter("optimization.adaptive_costs_weights.energy").as_double());
+    //costs_weights.push_back(this->get_parameter("optimization.adaptive_costs_weights.energy").as_double());
     int best_idx = arena_core::adaptive_voting_algorithm::getBetterCandidateIndex(pop_husky_filtered.get_f(), costs_weights);
     pagmo::vector_double best_solution = pop_husky_filtered.get_x()[best_idx];
 
     // Convert the best solution to control points
-    std::vector<arena_core::ControlPoint<double, 4>> best_control_points = pagmoDVToControlPoints(best_solution);
+    std::vector<arena_core::ControlPoint<double, 3>> best_control_points = pagmoDVToControlPoints(best_solution);
     nurbs_->setControlPoints(best_control_points);
     arena_path_ = std::make_shared<Eigen::MatrixXd>(nurbs_->evaluate());
     publishARENAPath();
@@ -686,10 +881,15 @@ bool HuskyTestNode::isCurrentPathSafe() const
     // Check if the path is safe by checking for collisions with the octree
     for (int i = 0; i < arena_path_->cols() - 1; ++i)
     {
-        Eigen::Vector3d start = (*arena_path_).col(i);
-        Eigen::Vector3d end = (*arena_path_).col(i + 1);
+        Eigen::Vector2d start = arena_path_->col(i).head(2);
+        Eigen::Vector2d end = arena_path_->col(i + 1).head(2);
 
-        // TODO
+        if (traversability_mapping_->isOccupiedRayTracing(start, end))
+        {
+            RCLCPP_WARN(get_logger(), "Collision detected along the path segment from (%f, %f) to (%f, %f).",
+                        start.x(), start.y(), end.x(), end.y());
+            return false; // Collision detected
+        }
     }
     
     return true; // No collisions detected along the path
@@ -710,7 +910,8 @@ void HuskyTestNode::run()
 }
 
 HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
-: Node("husky_test_node", options), husky_config(50), husky_nurbs_analyzer_(nullptr), ompl_planner_(nullptr), nurbs_(nullptr), arena_path_(nullptr)
+: Node("husky_test_node", options), husky_config(50), traversability_mapping_(std::make_shared<arena_demos::TraversabilityCostmap>()),
+  husky_nurbs_analyzer_(nullptr), ompl_planner_(nullptr), nurbs_(nullptr), arena_path_(nullptr)
 {
     // ROS Publisher Initialization
     arena_control_points_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(ros_namespace_ + "/arena_control_points", 10);
@@ -721,6 +922,8 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
     // ROS Subscription Initialization
     goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(ros_namespace_ + "/goal_pose", 10, std::bind(&HuskyTestNode::goalPoseCallback, this, std::placeholders::_1));
     planning_activation_sub_ = this->create_subscription<std_msgs::msg::Bool>(ros_namespace_ + "/planning_activation", 10, std::bind(&HuskyTestNode::planningActivationCallback, this, std::placeholders::_1));
+    global_grid_map_sub_ = this->create_subscription<grid_map_msgs::msg::GridMap>("/global_grid_map", 10, std::bind(&HuskyTestNode::globalGridMapCallback, this, std::placeholders::_1));
+    robot_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/groundTruth/poseStamped", 10, std::bind(&HuskyTestNode::robotPoseCallback, this, std::placeholders::_1));
     
     population_size_ = this->get_parameter("optimization.NSGA-II.population_size").as_int();
     // Make sure the population size is divisible by 4
@@ -732,29 +935,29 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
     husky_config.robot_max_speed_ = this->get_parameter("robot.max_speed").as_double(); // m/s
     husky_config.robot_max_acceleration_ = this->get_parameter("robot.max_acceleration").as_double(); // m/s^2
 
-    husky_nurbs_analyzer_ = std::make_shared<arena_demos::HuskyNurbsAnalyzer>(husky_config);
+    husky_nurbs_analyzer_ = std::make_shared<arena_demos::HuskyNurbsAnalyzer>(traversability_mapping_, husky_config);
     
     // Initialize the nurbs output structure
-    husky_output_.fitness_size_ = 3;
+    husky_output_.fitness_size_ = 2;
     husky_output_.fitness_array_ = std::vector<double>(husky_output_.fitness_size_, std::numeric_limits<double>::max()); // We are optimizing to minimize the fitness values
-    husky_output_.constraint_size_ = 2;
+    husky_output_.constraint_size_ = 1;
     husky_output_.constraint_array_ = std::vector<double>(husky_output_.constraint_size_, std::numeric_limits<double>::max());
 
     // Initialize the OMPL planner
     ompl_planner_ = std::make_shared<arena_core::OMPLPlanner>();
     double timeout = this->get_parameter("optimization.initialization.timeout").as_double();
     ompl_planner_->setSolvingTimeout(timeout);
-    ompl_planner_->setProblemDimensions(3);                                                                                  
+    ompl_planner_->setProblemDimensions(2);
     ompl_planner_->getInitializer()->planner_ = std::make_shared<ompl::geometric::RRT>(ompl_planner_->getSpaceInformation());
     double rrt_range = this->get_parameter("optimization.initialization.rrt_range").as_double();
     ompl_planner_->getInitializer()->planner_->as<ompl::geometric::RRT>()->setRange(rrt_range);
     // TODO
-    ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OMPLStateValidityChecker>(ompl_planner_->getSpaceInformation(), nullptr);
+    ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OMPLStateValidityChecker>(ompl_planner_->getSpaceInformation(), traversability_mapping_);
     ompl_planner_->getInitializer()->optimization_objective_ = nullptr;
 
     // Initialize the NURBS API
     husky_config.base_config.sample_size = this->get_parameter("optimization.sample_size").as_int();
-    nurbs_ = std::make_shared<arena_core::Nurbs<4>>(std::vector<arena_core::ControlPoint<double, 4>>(), husky_config.base_config.sample_size);
+    nurbs_ = std::make_shared<arena_core::Nurbs<3>>(std::vector<arena_core::ControlPoint<double, 3>>(), husky_config.base_config.sample_size);
 
     // ROS Timer Initialization
     // Timer for the main loop at 50 Hz
