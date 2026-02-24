@@ -91,8 +91,6 @@ void HuskyNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_core:
 
     if (a_output.constraint_size_ > 0 && a_output.constraint_array_.size() != a_output.constraint_size_)
         throw std::runtime_error("Constraint array size does not match the expected constraint output size.");
-    
-    // TODO
 
     for (unsigned int i = 0; i < husky_config_.base_config.sample_size - 1; i++)
     {

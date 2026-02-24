@@ -731,6 +731,8 @@ pagmo::vector_double HuskyTestNode::huskyFitness(const pagmo::vector_double& dv)
         husky_output_.fitness_array_[1] = std::numeric_limits<double>::max();
     }
 
+    //std::cout << "Fitness array, [0]: " << husky_output_.fitness_array_[0] << " [1]: " << husky_output_.fitness_array_[1] << std::endl;
+
     return husky_output_.fitness_array_;
 }
 
@@ -952,7 +954,7 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
     double rrt_range = this->get_parameter("optimization.initialization.rrt_range").as_double();
     ompl_planner_->getInitializer()->planner_->as<ompl::geometric::RRT>()->setRange(rrt_range);
     // TODO
-    ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OMPLStateValidityChecker>(ompl_planner_->getSpaceInformation(), traversability_mapping_);
+    ompl_planner_->getInitializer()->state_validity_checker_ = std::make_shared<arena_core::OMPLStateValidityChecker>(ompl_planner_->getSpaceInformation(), traversability_mapping_, 0.5);
     ompl_planner_->getInitializer()->optimization_objective_ = nullptr;
 
     // Initialize the NURBS API

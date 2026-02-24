@@ -11,7 +11,7 @@ husky_test_node:
             sample_size: 50                      # Number of points along a curve
             NSGA-II:
                 population_size: 40                     # Number of individuals in the population
-                generations: 100                      # Number of generations
+                generations: 1000                      # Number of generations
                 mutation_params: 
                     distribution_index: 20.0             # Distribution index of the mutation
                 crossover_params:
