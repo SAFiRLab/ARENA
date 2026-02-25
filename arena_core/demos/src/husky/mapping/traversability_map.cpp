@@ -34,7 +34,7 @@ void TraversabilityMap::initializeMaps(const grid_map::Position &a_center)
     (*global_map_)["sum"].setZero();
     (*global_map_)["slope"].setConstant(std::numeric_limits<float>::quiet_NaN());
     (*global_map_)["occupancy"].setConstant(std::numeric_limits<float>::quiet_NaN());
-    (*global_map_)["cost"].setConstant(std::numeric_limits<double>::quiet_NaN());
+    (*global_map_)["cost"].setConstant(500.0f);
     //(*global_map_)["cost"].setConstant(1000.0);
 
     // ----- LOCAL MAP -----
@@ -254,7 +254,7 @@ void TraversabilityMap::updateOccupancyAtIter(const grid_map::GridMapIterator &i
     if (global_map_->isValid(index, "step"))
     {
         const float step = global_map_->at("step", index);
-        if (step > 0.5f)   // ← tune this threshold
+        if (step > 1.5f)   // ← tune this threshold
             occupied = true;
     }
 
@@ -298,13 +298,10 @@ void TraversabilityMap::updateCostAtIter(const grid_map::GridMapIterator &it, do
     const grid_map::Index index = *it;
 
     if (!global_map_->isValid(index, "elevation"))
-    {
-        global_map_->at("cost", index) = 100.0;
         return;
-    }
 
     // Hard occupancy
-    double occupancy = 0.0;
+    double occupancy = 0.5;
     if (global_map_->isValid(index, "occupancy"))
     {
         occupancy = global_map_->at("occupancy", index);
@@ -325,9 +322,9 @@ void TraversabilityMap::updateCostAtIter(const grid_map::GridMapIterator &it, do
         step = global_map_->at("step", index);
 
     // ---- TUNABLE WEIGHTS ----
-    const float w_slope = 100.0f;
-    const float w_step  = 50.0f;
-    const float w_occupancy = 50.0f;
+    const float w_slope = 0.0f;
+    const float w_step  = 0.0f;
+    const float w_occupancy = 200.0f;
 
     a_cost = w_slope * slope + w_step * step + w_occupancy * occupancy;
 

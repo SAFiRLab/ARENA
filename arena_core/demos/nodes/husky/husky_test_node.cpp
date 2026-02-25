@@ -170,6 +170,7 @@ private:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr arena_path_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr ompl_planner_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr solution_set_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr current_goal_pub_;
 
     // ROS Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr goal_pose_sub_;
@@ -237,6 +238,14 @@ void HuskyTestNode::goalPoseCallback(const geometry_msgs::msg::PointStamped::Sha
 
     ompl_planner_->setGoal(planning_goal_.goal_);
     goal_point_ = planning_goal_.goal_;
+
+    geometry_msgs::msg::PointStamped goal_msg;
+    goal_msg.header.stamp = this->now();
+    goal_msg.header.frame_id = "world";
+    goal_msg.point.x = planning_goal_.goal_.x();
+    goal_msg.point.y = planning_goal_.goal_.y();
+    goal_msg.point.z = msg->point.z;
+    current_goal_pub_->publish(goal_msg);
 }
 
 void HuskyTestNode::planningActivationCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -521,9 +530,9 @@ void HuskyTestNode::publishSolutionSet(const pagmo::population& pop)
             pose_marker.points.push_back(a_point);
         }
 
-        pose_marker.scale.x = 0.3;
-        pose_marker.scale.y = 0.3;
-        pose_marker.scale.z = 0.3;
+        pose_marker.scale.x = 0.1;
+        pose_marker.scale.y = 0.1;
+        pose_marker.scale.z = 0.1;
         pose_marker.color.a = 0.5;
         
         pagmo::vector_double fitness = pop.get_f()[i];
@@ -724,7 +733,7 @@ pagmo::vector_double HuskyTestNode::huskyFitness(const pagmo::vector_double& dv)
     // Evaluate the NURBS curve using the Husky NURBS Analyzer
     husky_nurbs_analyzer_->eval(pt, husky_output_);
     
-    if (husky_output_.constraint_array_[0] > 0.5)
+    if (husky_output_.constraint_array_[0] > 0.9)
     {
         // Reject the solution if it's in collision with the environment
         husky_output_.fitness_array_[0] = std::numeric_limits<double>::max();
@@ -912,7 +921,7 @@ void HuskyTestNode::run()
 }
 
 HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
-: Node("husky_test_node", options), husky_config(50), traversability_mapping_(std::make_shared<arena_demos::TraversabilityCostmap>()),
+: Node("husky_test_node", options), husky_config(0), traversability_mapping_(std::make_shared<arena_demos::TraversabilityCostmap>()),
   husky_nurbs_analyzer_(nullptr), ompl_planner_(nullptr), nurbs_(nullptr), arena_path_(nullptr)
 {
     // ROS Publisher Initialization
@@ -920,6 +929,7 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
     arena_path_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/arena_path", 10);
     ompl_planner_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/ompl_planner_paths", 10);
     solution_set_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/solution_set", 10);
+    current_goal_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(ros_namespace_ + "/current_goal", 10);
 
     // ROS Subscription Initialization
     goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(ros_namespace_ + "/goal_pose", 10, std::bind(&HuskyTestNode::goalPoseCallback, this, std::placeholders::_1));
@@ -936,8 +946,6 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
     husky_config.robot_mass_ = this->get_parameter("robot.mass").as_double(); // kg
     husky_config.robot_max_speed_ = this->get_parameter("robot.max_speed").as_double(); // m/s
     husky_config.robot_max_acceleration_ = this->get_parameter("robot.max_acceleration").as_double(); // m/s^2
-
-    husky_nurbs_analyzer_ = std::make_shared<arena_demos::HuskyNurbsAnalyzer>(traversability_mapping_, husky_config);
     
     // Initialize the nurbs output structure
     husky_output_.fitness_size_ = 2;
@@ -960,6 +968,7 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
     // Initialize the NURBS API
     husky_config.base_config.sample_size = this->get_parameter("optimization.sample_size").as_int();
     nurbs_ = std::make_shared<arena_core::Nurbs<3>>(std::vector<arena_core::ControlPoint<double, 3>>(), husky_config.base_config.sample_size);
+    husky_nurbs_analyzer_ = std::make_shared<arena_demos::HuskyNurbsAnalyzer>(traversability_mapping_, husky_config);
 
     // ROS Timer Initialization
     // Timer for the main loop at 50 Hz

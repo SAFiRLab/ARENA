@@ -8,7 +8,7 @@ husky_test_node:
             initialization:
                 timeout: 1.0                       # Maximum time for RRT in seconds
                 rrt_range: 1.0                        # Distance between nodes in the RRT
-            sample_size: 50                      # Number of points along a curve
+            sample_size: 20                      # Number of points along a curve
             NSGA-II:
                 population_size: 40                     # Number of individuals in the population
                 generations: 1000                      # Number of generations
