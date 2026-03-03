@@ -20,19 +20,6 @@ ament_target_dependencies(nurbs_test_node
     grid_map_core
 )
 
-add_executable(mpc_controller_node xmaxx/mpc_controller_node.cpp)
-target_link_libraries(mpc_controller_node ${PROJECT_NAME}_arena_core ${OCTOMAP_LIBRARIES} yaml-cpp)
-ament_target_dependencies(mpc_controller_node 
-    rclcpp
-    visualization_msgs
-    std_msgs
-    geometry_msgs
-    nav_msgs
-    tf2_ros
-    tf2
-    grid_map_core
-)
-
 add_executable(linedrone_test_node linedrone/linedrone_test_node.cpp ${ARENA_DEMOS_LINEDRONE_SRCS})
 target_link_libraries(linedrone_test_node ${PROJECT_NAME}_arena_core ${OCTOMAP_LIBRARIES} yaml-cpp)
 ament_target_dependencies(linedrone_test_node 
@@ -83,7 +70,6 @@ ament_target_dependencies(traversability_map_node
 install(TARGETS
   costmap_3D_node
   nurbs_test_node
-  mpc_controller_node
   linedrone_test_node
   husky_test_node
   traversability_map_node
