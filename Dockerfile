@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     ssh \
     sudo \
     gdb \
+    vim \
     rapidjson-dev \
     libwebsocketpp-dev \
     libboost-all-dev \
@@ -36,7 +37,8 @@ RUN sh -c 'echo "deb [arch=$(dpkg --print-architecture)] http://packages.ros.org
 
 # Update and install ROS 2 Humble
 RUN apt-get update && apt-get install -y \
-    ros-humble-desktop && \
+    ros-humble-desktop \
+    ros-humble-xacro && \
     rm -rf /var/lib/apt/lists/*
 
 # Set up locale for ROS
@@ -81,6 +83,7 @@ RUN apt-get update && apt-get install -y \
     ros-humble-octomap \
     ros-humble-octomap-ros \
     ros-humble-octomap-server \
+    ros-humble-grid-map \
     libjsoncpp-dev \
     libsecret-1-dev \
     libccd-dev && \

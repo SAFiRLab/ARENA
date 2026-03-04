@@ -845,6 +845,10 @@ void LinedroneTestNode::ARENAOptimization()
     publishARENAPath();
     publishControlPoints();
 
+    delete[] x_bounds;
+    delete[] y_bounds;
+    delete[] z_bounds;
+    
     path_planned_ = true;
     planning_activated_ = false;
     planning_goal_.goal_sent_ = false;

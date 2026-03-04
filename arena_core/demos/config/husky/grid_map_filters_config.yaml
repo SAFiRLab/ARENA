@@ -1,0 +1,8 @@
+traversability_map_node:
+  ros__parameters:
+
+    filter_chain.filter2.name: "smooth"
+    filter_chain.filter2.type: "gridMapFilters/MeanInRadiusFilter"
+    filter_chain.filter2.params.input_layer: "elevation"
+    filter_chain.filter2.params.output_layer: "elevation"
+    filter_chain.filter2.params.radius: 0.2

@@ -43,9 +43,6 @@
 #include <pagmo/problems/schwefel.hpp>
 #include <pagmo/algorithms/nsga2.hpp>
 
-// LineDrone_navigation
-#include "linedrone/linedrone_problem.hpp"
-
 
 int total_fitness_evals = 0;
 

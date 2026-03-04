@@ -17,11 +17,8 @@ target_include_directories(${PROJECT_NAME}_arena_core
            $<INSTALL_INTERFACE:include>
 )
 
-
 set(ARENA_CORE_PACKAGES_LIBRARIES
-    ${OCTOMAP_LIBRARIES}
     ${OMPL_LIBRARIES}
-    yaml-cpp
     Pagmo::pagmo
 )
 
