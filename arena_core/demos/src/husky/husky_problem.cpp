@@ -68,7 +68,7 @@ namespace pagmo
 {
     if (fdim < 2u) {
         pagmo_throw(std::invalid_argument,
-                    "Husky problem have a minimum of 2 objectives: fdim=" + std::to_string(fdim) + " was detected");
+                    "The husky problem has a minimum of 2 objectives: fdim=" + std::to_string(fdim) + " was detected");
     }
     // We conservatively limit these dimensions to avoid checking overflows later
     if (fdim > std::numeric_limits<decltype(fdim)>::max() / 3u) {
@@ -106,7 +106,7 @@ vector_double husky_problem::fitness(const vector_double &x) const
 
 vector_double husky_problem::fitness_non_const(vector_double &x) const
 {
-    return vector_double(4u, std::numeric_limits<double>::max());
+    return vector_double(m_fdim, std::numeric_limits<double>::max());
 }
 
 /**

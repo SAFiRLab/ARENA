@@ -308,13 +308,29 @@ void HuskyTestNode::publishARENAPath()
         
         // Get the elevation from the traversability mapping
         auto cap = traversability_mapping_->getCapability<arena_demos::TraversabilityCostCapability>();
-        double elevation = cap->getElevationAt(point_2d);
-        if (!std::isfinite(elevation))
+        if (!cap)
         {
+            RCLCPP_WARN(this->get_logger(), "TraversabilityCostCapability not available in the traversability mapping.");
             p.z = 0.0;
         }
         else
-            p.z = elevation;
+        {
+            try
+            {
+                double elevation = cap->getElevationAt(point_2d);
+                if (!std::isfinite(elevation))
+                {
+                    p.z = 0.0;
+                }
+                else
+                    p.z = elevation;
+            }
+            catch(const std::exception& e)
+            {
+                RCLCPP_ERROR(this->get_logger(), "Error getting elevation at point (%f, %f): %s", point_2d.x(), point_2d.y(), e.what());
+                p.z = 0.0;
+            }
+        }
 
         path_marker.points.push_back(p);
 
@@ -652,6 +668,12 @@ void HuskyTestNode::initializerPlanning()
     }
 
     // Set the bounds for the OMPL planner
+    if (!traversability_mapping_)
+    {
+        RCLCPP_ERROR(get_logger(), "Traversability mapping is not initialized. Cannot set bounds for OMPL planner.");
+        return;
+    }
+
     Eigen::MatrixXd bounds = traversability_mapping_->getMapBounds();
     Eigen::Vector2d min_bounds = bounds.row(0).transpose();
     Eigen::Vector2d max_bounds = bounds.row(1).transpose();
@@ -865,6 +887,9 @@ void HuskyTestNode::ARENAOptimization()
     arena_path_ = std::make_shared<Eigen::MatrixXd>(nurbs_->evaluate());
     publishARENAPath();
     publishControlPoints();
+
+    delete[] x_bounds;
+    delete[] y_bounds;
 
     path_planned_ = true;
     planning_activated_ = false;

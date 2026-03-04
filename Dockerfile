@@ -38,7 +38,7 @@ RUN sh -c 'echo "deb [arch=$(dpkg --print-architecture)] http://packages.ros.org
 # Update and install ROS 2 Humble
 RUN apt-get update && apt-get install -y \
     ros-humble-desktop \
-    ros-humble-xacro \
+    ros-humble-xacro && \
     rm -rf /var/lib/apt/lists/*
 
 # Set up locale for ROS

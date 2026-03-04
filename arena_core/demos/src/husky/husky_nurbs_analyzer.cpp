@@ -75,7 +75,7 @@ void HuskyNurbsAnalyzer::evalSafetyCost(const Eigen::Vector2d& a_point1)
         husky_output_.nb_of_collision_checks_++;
     }
     else
-        std::cerr << "CostmapMapping cannot provide CostSDFCapability, collision cost evaluation is skipped." << std::endl;
+        std::cerr << "Traversability mapping cannot provide TraversabilityCostCapability, collision cost evaluation is skipped." << std::endl;
 }
 
 void HuskyNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_core::EvalNurbsOutput& a_output)
@@ -175,7 +175,12 @@ void HuskyNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_core:
 
     // Set the output values
     a_output.fitness_array_[0] = husky_output_.time_output_;
-    a_output.fitness_array_[1] = (husky_output_.total_collision_cost_ / husky_output_.nb_of_collision_checks_) + husky_output_.max_collision_cost_;
+    if (husky_output_.nb_of_collision_checks_ > 0)
+    {
+        a_output.fitness_array_[1] = (husky_output_.total_collision_cost_ / husky_output_.nb_of_collision_checks_) + husky_output_.max_collision_cost_;
+    }
+    else
+        a_output.fitness_array_[1] = std::numeric_limits<double>::max(); // If no collision checks were performed, set safety cost to max to penalize the solution
 
     //a_output.fitness_array_[2] = linedrone_output_.total_energy_;
 

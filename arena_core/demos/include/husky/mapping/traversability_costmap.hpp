@@ -141,11 +141,12 @@ public:
             throw std::runtime_error("TraversabilityCostmap::isOccupied() global grid_map is null.");
 
         grid_map::Position position(a_point.x(), a_point.y());
+        if (!global_map_wrapper_->global_grid_map_->isInside(position))
+            throw std::out_of_range("TraversabilityCostmap::isOccupied() point is outside of the grid map.");
+        
         // Index from position
         grid_map::Index index;
         global_map_wrapper_->global_grid_map_->getIndex(position, index);
-        if (!global_map_wrapper_->global_grid_map_->isInside(position))
-            throw std::out_of_range("TraversabilityCostmap::isOccupied() point is outside of the grid map.");
 
         if (!global_map_wrapper_->global_grid_map_->isValid(index, "occupancy"))
             return false;
