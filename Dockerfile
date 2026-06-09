@@ -38,7 +38,9 @@ RUN sh -c 'echo "deb [arch=$(dpkg --print-architecture)] http://packages.ros.org
 # Update and install ROS 2 Humble
 RUN apt-get update && apt-get install -y \
     ros-humble-desktop \
-    ros-humble-xacro && \
+    ros-humble-xacro \
+    ros-humble-ros2-control \
+    ros-humble-ros2-controllers && \
     rm -rf /var/lib/apt/lists/*
 
 # Set up locale for ROS
@@ -66,6 +68,8 @@ RUN mkdir -p /home/dev_ws/src
 # Clone ROS repositories
 RUN git clone https://github.com/facontidavide/rosx_introspection.git /home/dev_ws/src/rosx_introspection
 RUN git clone https://github.com/Unity-Technologies/ROS-TCP-Endpoint.git /home/dev_ws/src/ros_tcp_endpoint -b ROS2v0.7.0
+RUN git clone https://github.com/SAFiRLab/clearpath_robots_sim.git /home/dev_ws/src/clearpath_robots_sim
+RUN /bin/bash -c "cd /home/dev_ws/src/clearpath_robots_sim && git fetch && git checkout -b mpc_controller origin/mpc_controller && git pull"
 RUN apt-get update && apt install -y ros-humble-foxglove-bridge
 
 # Build the workspace
@@ -102,6 +106,27 @@ RUN /bin/bash -c "cd /home/pagmo2 && \
     cmake --build . && \
     apt-get install sudo && \
     sudo cmake --build . --target install"
+
+# Add CasADI dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    gfortran \
+    liblapack-dev \
+    pkg-config \
+    swig \
+    coinor-libipopt-dev --install-recommends && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/casadi/casadi.git -b main casadi
+RUN /bin/bash -c "cd /home/casadi && \
+    git pull && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_PYTHON=ON -DWITH_PYTHON3=ON -DWITH_IPOPT=ON && \
+    make && \
+    apt-get install sudo && \
+    sudo make install"
 
 # Build the custom message workspace
 RUN /bin/bash -c "source /opt/ros/humble/setup.sh && \
