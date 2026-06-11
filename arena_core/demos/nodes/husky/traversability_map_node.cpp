@@ -33,6 +33,7 @@ public:
 
         // Slow global publishing
         global_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), std::bind(&TraversabilityMappingNode::publishGlobalMap, this));
+        local_timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&TraversabilityMappingNode::publishLocalMap, this));
     }
 
 private:
@@ -42,9 +43,6 @@ private:
         robot_position_ = {a_msg->pose.position.x, a_msg->pose.position.y};
 
         traversability_map_.moveLocalMap(robot_position_);
-
-        if (traversability_map_.getLocalMap())
-            publishLocalMap();
     }
 
     void cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr a_msg)
@@ -119,7 +117,7 @@ private:
     rclcpp::Publisher<grid_map_msgs::msg::GridMap>::SharedPtr global_pub_;
 
     rclcpp::TimerBase::SharedPtr global_timer_;
-
+    rclcpp::TimerBase::SharedPtr local_timer_;
     tf2_ros::Buffer tf_buffer_;
     tf2_ros::TransformListener tf_listener_;
 

@@ -11,8 +11,10 @@ if [ "$1" == "real" ]; then
     USE_SIM_TIME=false
 fi
 
-ros2 launch clearpath_robots_sim bringup.launch.py use_sim_time:=$USE_SIM_TIME &
-sleep 2
+if [ "$USE_SIM_TIME" = true ]; then
+    ros2 launch clearpath_robots_sim bringup.launch.py use_sim_time:=$USE_SIM_TIME &
+    sleep 2
+fi
 
 ros2 run clearpath_robots_sim pure_pursuit_node --ros-args -p use_sim_time:=$USE_SIM_TIME &
 sleep 1

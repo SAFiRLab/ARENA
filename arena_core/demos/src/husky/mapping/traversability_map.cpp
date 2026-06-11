@@ -109,6 +109,9 @@ void TraversabilityMap::updateMap(const pcl::PointCloud<pcl::PointXYZ> &a_cloud)
 
     std::lock_guard<std::mutex> lock(map_mutex_);
 
+    (*global_map_)["sum"].setZero();
+    (*global_map_)["count"].setZero();
+
     for (const auto & p : a_cloud.points)
     {
         if (!std::isfinite(p.z)) continue;
@@ -128,10 +131,21 @@ void TraversabilityMap::updateMap(const pcl::PointCloud<pcl::PointXYZ> &a_cloud)
     double max_cost = 0.0;
     for (grid_map::GridMapIterator it(*global_map_); !it.isPastEnd(); ++it)
     {
+        float sum = global_map_->at("sum", *it);
         float count = global_map_->at("count", *it);
 
+        float alpha = 0.8f; // Tune this
         if (count > 0.0f)
-            global_map_->at("elevation", *it) = global_map_->at("sum", *it) / count;
+        {
+            // Average of all points hitting this cell this scan
+            const float z_scan = sum / count;
+            float& elev = global_map_->at("elevation", *it);
+
+            if (!std::isfinite(elev))
+                elev = z_scan;
+            else
+                elev = alpha * z_scan + (1.0f - alpha) * elev;  // EMA against stored elevation
+        }
 
         updateStepAtIter(it);
         updateSlopeAtIter(it);

@@ -38,6 +38,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include <grid_map_msgs/msg/grid_map.hpp>
+#include "nav_msgs/msg/odometry.hpp"
 
 // Local
 #include "arena_core/math/nurbs.h"
@@ -177,9 +178,10 @@ private:
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr planning_activation_sub_;
     rclcpp::Subscription<grid_map_msgs::msg::GridMap>::SharedPtr global_grid_map_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr robot_pose_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_sub_;
 
     // ROS namespace
-    std::string ros_namespace_ = "husky_test_node";
+    std::string ros_namespace_;
 
     // ROS Subscriptions Callbacks
     /** @brief Callback for the goal pose subscription.
@@ -206,6 +208,12 @@ private:
     */
     void robotPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
+    /** @brief Callback for the odometry subscription.
+    * This function is called when a new odometry message is received.
+    * @param msg The message containing the odometry information.
+    */
+    void odometryCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
+
     /****************** User-Defined Attributes *******************/
     arena_demos::HuskyNurbsAnalyzerConfig husky_config;
     arena_core::EvalNurbsOutput husky_output_;
@@ -215,6 +223,8 @@ private:
     std::shared_ptr<Eigen::MatrixXd> arena_path_;
     bool planning_activated_ = false;
     bool path_planned_ = false;
+    bool is_simulation_ = false;
+    bool is_home_position_set_ = false;
     GoalStatus planning_goal_;
 
     // For the OMPL planner
@@ -223,6 +233,7 @@ private:
     Eigen::Vector2d start_point_;
     Eigen::Vector3d current_robot_pose_;
     Eigen::Vector2d goal_point_;
+    Eigen::Vector3d robot_home_pose_;
 
     // For optimization
     size_t population_size_ = 0;
@@ -248,8 +259,26 @@ void HuskyTestNode::goalPoseCallback(const geometry_msgs::msg::PointStamped::Sha
     current_goal_pub_->publish(goal_msg);
 }
 
+void HuskyTestNode::odometryCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+    if (!is_home_position_set_)
+    {
+        robot_home_pose_ = Eigen::Vector3d(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z);
+        is_home_position_set_ = true;
+    }
+
+    current_robot_pose_ = Eigen::Vector3d(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z) - robot_home_pose_;
+    start_point_ = current_robot_pose_.head<2>();
+}
+
 void HuskyTestNode::planningActivationCallback(const std_msgs::msg::Bool::SharedPtr msg)
 {
+    if (!is_simulation_ && !is_home_position_set_)
+    {
+        RCLCPP_WARN(this->get_logger(), "Planning activation received but home position is not set yet. Ignoring the message.");
+        return;
+    }
+    
     planning_activated_ = msg->data;
     planning_goal_.goal_sent_ = false;
 }
@@ -762,7 +791,7 @@ pagmo::vector_double HuskyTestNode::huskyFitness(const pagmo::vector_double& dv)
         husky_output_.fitness_array_[1] = std::numeric_limits<double>::max();
     }
 
-    //std::cout << "Fitness array, [0]: " << husky_output_.fitness_array_[0] << " [1]: " << husky_output_.fitness_array_[1] << std::endl;
+    std::cout << "Fitness array, [0]: " << husky_output_.fitness_array_[0] << " [1]: " << husky_output_.fitness_array_[1] << std::endl;
 
     return husky_output_.fitness_array_;
 }
@@ -949,6 +978,9 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
 : Node("husky_test_node", options), husky_config(0), traversability_mapping_(std::make_shared<arena_demos::TraversabilityCostmap>()),
   husky_nurbs_analyzer_(nullptr), ompl_planner_(nullptr), nurbs_(nullptr), arena_path_(nullptr)
 {
+    ros_namespace_ = this->get_namespace();
+    is_simulation_ = this->get_parameter("use_sim_time").as_bool();
+    
     // ROS Publisher Initialization
     arena_control_points_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(ros_namespace_ + "/arena_control_points", 10);
     arena_path_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/arena_path", 10);
@@ -960,7 +992,17 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
     goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(ros_namespace_ + "/goal_pose", 10, std::bind(&HuskyTestNode::goalPoseCallback, this, std::placeholders::_1));
     planning_activation_sub_ = this->create_subscription<std_msgs::msg::Bool>(ros_namespace_ + "/planning_activation", 10, std::bind(&HuskyTestNode::planningActivationCallback, this, std::placeholders::_1));
     global_grid_map_sub_ = this->create_subscription<grid_map_msgs::msg::GridMap>("/global_grid_map", 10, std::bind(&HuskyTestNode::globalGridMapCallback, this, std::placeholders::_1));
-    robot_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/groundTruth/poseStamped", 10, std::bind(&HuskyTestNode::robotPoseCallback, this, std::placeholders::_1));
+
+    if (is_simulation_)
+    {
+        robot_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/groundTruth/poseStamped", 10, std::bind(&HuskyTestNode::robotPoseCallback, this, std::placeholders::_1));
+    }
+    else
+    {
+        // Data coming from a GPS's odometry
+        odometry_sub_ = this->create_subscription<nav_msgs::msg::Odometry>("/odometry", 10, std::bind(&HuskyTestNode::odometryCallback, this, std::placeholders::_1));
+        is_home_position_set_ = false;
+    }
     
     population_size_ = this->get_parameter("optimization.NSGA-II.population_size").as_int();
     // Make sure the population size is divisible by 4
