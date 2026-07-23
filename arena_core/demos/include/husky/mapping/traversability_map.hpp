@@ -80,13 +80,16 @@ public:
 private:
 
     void initializeMaps(const grid_map::Position &a_center);
+    void updateElevationAtIndex(const grid_map::Index &index, const float z);
+    void updateOccupancyLogOddsAtIndex(const grid_map::Index &index, const bool occupied);
+    void updateOccupancyRay(const grid_map::Position &start, const grid_map::Position &end);
     void updateStepAtIter(const grid_map::GridMapIterator &it);
     void updateSlopeAtIter(const grid_map::GridMapIterator &it);
-    void updateOccupancyAtIter(const grid_map::GridMapIterator &it);
+    void computeInflatedOccupancy();
     void updateCostAtIter(const grid_map::GridMapIterator &it, double &a_cost);
-    void normalizeCosts(const double a_max_cost);
+    void normalizeLayersAndApplyCost();
 
-    // User-defined attirbutes
+    // User-defined attributes
     std::shared_ptr<grid_map::GridMap> global_map_;
     std::shared_ptr<grid_map::GridMap> local_map_;
 
@@ -94,6 +97,8 @@ private:
     std::mutex map_mutex_;
     bool global_map_initialized_ = false;
     RobotBoundingBox robot_bb_;
+    float max_step_iter_ = 0.0f;
+    float max_slope_iter_ = 0.0f;
 
 }; // class TraversabilityMap
 

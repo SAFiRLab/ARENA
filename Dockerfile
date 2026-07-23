@@ -68,12 +68,15 @@ RUN mkdir -p /home/dev_ws/src
 # Clone ROS repositories
 RUN git clone https://github.com/facontidavide/rosx_introspection.git /home/dev_ws/src/rosx_introspection
 RUN git clone https://github.com/Unity-Technologies/ROS-TCP-Endpoint.git /home/dev_ws/src/ros_tcp_endpoint -b ROS2v0.7.0
-RUN git clone https://github.com/SAFiRLab/clearpath_robots_sim.git /home/dev_ws/src/clearpath_robots_sim
-RUN /bin/bash -c "cd /home/dev_ws/src/clearpath_robots_sim && git fetch && git checkout -b mpc_controller origin/mpc_controller && git pull"
+RUN git clone -b mpc_controller --single-branch https://github.com/SAFiRLab/clearpath_robots_sim.git /home/dev_ws/src/clearpath_robots_sim
+RUN git clone https://github.com/url-kaist/TRAVEL.git /home/dev_ws/src/TRAVEL
+
 RUN apt-get update && apt install -y ros-humble-foxglove-bridge
 
+WORKDIR /home/dev_ws/
+
 # Build the workspace
-RUN /bin/bash -c "source /opt/ros/humble/setup.sh && cd /home/dev_ws && colcon build"
+RUN /bin/bash -c "source /opt/ros/humble/setup.sh && colcon build"
 
 # Set workspace environment in the bashrc
 RUN echo "source /home/dev_ws/install/setup.bash" >> ~/.bashrc

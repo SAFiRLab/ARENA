@@ -98,7 +98,7 @@ public:
         // Index from position
         grid_map::Index index;
         global_map_wrapper_->global_grid_map_->getIndex(position, index);
-        return double(global_map_wrapper_->global_grid_map_->at("occupancy", index));
+        return double(global_map_wrapper_->global_grid_map_->at("occupancy_probability", index));
     }
 
     double getElevationAt(const Eigen::Vector2d &a_point) const
@@ -113,7 +113,7 @@ public:
         // Index from position
         grid_map::Index index;
         global_map_wrapper_->global_grid_map_->getIndex(position, index);
-        return double(global_map_wrapper_->global_grid_map_->at("elevation", index));
+        return double(global_map_wrapper_->global_grid_map_->at("elevation_mean", index));
     }
 
 private:
@@ -148,10 +148,10 @@ public:
         grid_map::Index index;
         global_map_wrapper_->global_grid_map_->getIndex(position, index);
 
-        if (!global_map_wrapper_->global_grid_map_->isValid(index, "occupancy"))
+        if (!global_map_wrapper_->global_grid_map_->isValid(index, "occupancy_probability"))
             return false;
 
-        double occupancy_value = global_map_wrapper_->global_grid_map_->at("occupancy", index);
+        double occupancy_value = global_map_wrapper_->global_grid_map_->at("occupancy_probability", index);
         return (occupancy_value >= 0.9f) ? true : false;
     };
 
@@ -180,10 +180,10 @@ public:
                 global_map_wrapper_->global_grid_map_->getPosition(neighbor_index, neighbor_pos);
                 if (!global_map_wrapper_->global_grid_map_->isInside(neighbor_pos)) continue;
 
-                if (!global_map_wrapper_->global_grid_map_->isValid(neighbor_index, "occupancy"))
+                if (!global_map_wrapper_->global_grid_map_->isValid(neighbor_index, "occupancy_probability"))
                     continue;
 
-                if (global_map_wrapper_->global_grid_map_->at("occupancy", neighbor_index) >= 0.9f)
+                if (global_map_wrapper_->global_grid_map_->at("occupancy_probability", neighbor_index) >= 0.9f)
                     return false;
             }
         }

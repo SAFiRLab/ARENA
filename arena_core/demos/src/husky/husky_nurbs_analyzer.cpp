@@ -52,10 +52,10 @@ void HuskyNurbsAnalyzer::evalTimeCost(const double a_distance, const double a_ve
 {
     if (a_velocity <= 1.0e-6)
     {
-        husky_output_.time_output_ += a_distance / (a_velocity + 1.0e-6); // Prevent division by zero or very small velocity
+        husky_output_.time_output_ += a_distance;// / (a_velocity + 1.0e-6); // Prevent division by zero or very small velocity
     }
     else
-        husky_output_.time_output_ += a_distance / a_velocity; // Normal case
+        husky_output_.time_output_ += a_distance;// / a_velocity; // Normal case
 }
 
 void HuskyNurbsAnalyzer::evalSafetyCost(const Eigen::Vector2d& a_point1)

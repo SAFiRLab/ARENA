@@ -25,7 +25,7 @@ public:
     {
         using std::placeholders::_1;
 
-        cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_in", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::cloudCallback, this, _1));
+        cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/travel_node/nonground", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::cloudCallback, this, _1));
         pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/groundTruth/poseStamped", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::poseCallback, this, _1));
 
         local_pub_ = this->create_publisher<grid_map_msgs::msg::GridMap>("/local_grid_map", rclcpp::QoS(1));
