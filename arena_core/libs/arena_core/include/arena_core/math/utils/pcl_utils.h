@@ -40,6 +40,7 @@
 #include <pcl/common/common.h>
 #include <pcl/common/centroid.h>
 
+#if PCL_VERSION_COMPARE(<, 1, 14, 0)
 
 namespace pcl
 {
@@ -177,3 +178,5 @@ Eigen::Matrix<Scalar, 3, 3> &obb_rotational_matrix)
 }
 
 }; // namespace pcl
+
+#endif
