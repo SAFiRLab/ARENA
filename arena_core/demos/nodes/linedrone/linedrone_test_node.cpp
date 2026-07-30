@@ -176,9 +176,6 @@ private:
     rclcpp::Subscription<octomap_msgs::msg::Octomap>::SharedPtr inflated_octomap_sub_;
     rclcpp::Subscription<octomap_msgs::msg::Octomap>::SharedPtr color_octomap_sub_;
 
-    // ROS namespace
-    std::string ros_namespace_ = "linedrone_test_node";
-
     // ROS Subscriptions Callbacks
     /** @brief Callback for the goal pose subscription.
      * This function is called when a new goal pose is received.
@@ -224,6 +221,9 @@ private:
 
     // For optimization
     size_t population_size_ = 0;
+    
+    // ROS namespace
+    std::string ros_namespace_ = "linedrone_test_node";
 
 }; // LinedroneTestNode
 
@@ -909,14 +909,19 @@ LinedroneTestNode::LinedroneTestNode(rclcpp::NodeOptions options)
   linedrone_nurbs_analyzer_(nullptr), ompl_planner_(nullptr), nurbs_(nullptr), arena_path_(nullptr)
 {
     // ROS Publisher Initialization
-    arena_control_points_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(ros_namespace_ + "/arena_control_points", 10);
-    arena_path_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/arena_path", 10);
-    ompl_planner_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/ompl_planner_paths", 10);
-    solution_set_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/solution_set", 10);
+    arena_control_points_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("arena_control_points", 10);
+    arena_path_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("arena_path", 10);
+    ompl_planner_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("ompl_planner_paths", 10);
+    solution_set_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("solution_set", 10);
+
+    ros_namespace_ = this->get_namespace();
+
+    if (ros_namespace_ != "/" && ros_namespace_.back() != '/')
+        ros_namespace_ += "/";
 
     // ROS Subscription Initialization
-    goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(ros_namespace_ + "/goal_pose", 10, std::bind(&LinedroneTestNode::goalPoseCallback, this, std::placeholders::_1));
-    planning_activation_sub_ = this->create_subscription<std_msgs::msg::Bool>(ros_namespace_ + "/planning_activation", 10, std::bind(&LinedroneTestNode::planningActivationCallback, this, std::placeholders::_1));
+    goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(ros_namespace_ + "goal_pose", 10, std::bind(&LinedroneTestNode::goalPoseCallback, this, std::placeholders::_1));
+    planning_activation_sub_ = this->create_subscription<std_msgs::msg::Bool>(ros_namespace_ + "planning_activation", 10, std::bind(&LinedroneTestNode::planningActivationCallback, this, std::placeholders::_1));
     inflated_octomap_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/navigation/inflated_octomap/full", 10, std::bind(&LinedroneTestNode::inflatedOctomapCallback, this, std::placeholders::_1));
     color_octomap_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/navigation/sdf_octomap/full", 10, std::bind(&LinedroneTestNode::colorOctreeCallback, this, std::placeholders::_1));
 

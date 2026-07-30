@@ -1,4 +1,4 @@
-linedrone_test_node:
+/**:
     ros__parameters:
         robot:
             max_speed: 0.5                           # Speed of the robot in m/s

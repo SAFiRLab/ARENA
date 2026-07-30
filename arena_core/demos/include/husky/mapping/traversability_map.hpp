@@ -39,6 +39,7 @@
 
 #include <mutex>
 #include <memory>
+#include <unordered_map>
 
 
 namespace arena_demos
@@ -69,9 +70,9 @@ class TraversabilityMap
 public:
 
     TraversabilityMap();
-
+    
     void moveLocalMap(const Eigen::Vector2d &a_pose);
-    void updateMap(const pcl::PointCloud<pcl::PointXYZ> &a_cloud);
+    void updateMap(std::unordered_map<std::string, std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>> &a_clouds);
 
     std::shared_ptr<grid_map::GridMap> getLocalMap() { return local_map_; };
     std::shared_ptr<grid_map::GridMap> getGlobalMap() { return global_map_; };
@@ -79,6 +80,7 @@ public:
 
 private:
 
+    void updateMap(const std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> &a_cloud, const bool is_ground = false);
     void initializeMaps(const grid_map::Position &a_center);
     void updateElevationAtIndex(const grid_map::Index &index, const float z);
     void updateOccupancyLogOddsAtIndex(const grid_map::Index &index, const bool occupied);

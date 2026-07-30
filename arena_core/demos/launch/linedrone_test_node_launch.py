@@ -7,6 +7,7 @@ def generate_launch_description():
             package='arena_core',
             executable='linedrone_test_node',
             name='linedrone_test_node',
+            namespace='linedrone_test_node',
             parameters=['/home/dev_ws/src/arena_core/demos/config/linedrone_problem_params.yaml'],
             output='screen'
         )

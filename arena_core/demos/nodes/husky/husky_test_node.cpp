@@ -65,6 +65,7 @@
 // System
 #include <numeric>
 #include <limits>
+#include <random>
 
 
 using namespace std::chrono_literals;
@@ -237,6 +238,12 @@ private:
 
     // For optimization
     size_t population_size_ = 0;
+    double crossover_probability_ = 0.95;
+    double crossover_distribution_index_ = 10.0;
+    double mutation_probability_ = 0.01;
+    double mutation_distribution_index_ = 50.0;
+
+    std::default_random_engine rng_;
 
 }; // HuskyTestNode
 
@@ -703,6 +710,8 @@ void HuskyTestNode::initializerPlanning()
         return;
     }
 
+    std::uniform_real_distribution<double> dist(0.25 * husky_config.robot_max_speed_, husky_config.robot_max_speed_);
+
     Eigen::MatrixXd bounds = traversability_mapping_->getMapBounds();
     Eigen::Vector2d min_bounds = bounds.row(0).transpose();
     Eigen::Vector2d max_bounds = bounds.row(1).transpose();
@@ -733,7 +742,7 @@ void HuskyTestNode::initializerPlanning()
                     path_matrix(1, i) = real_state->values[1];
                     if (i > 0 && i < path->getStateCount() - 1)
                     {
-                        path_matrix(2, i) = husky_config.robot_max_speed_ * 0.25; // Assuming the 3th dimension is velocity
+                        path_matrix(2, i) = dist(rng_); // Assuming the 3th dimension is velocity
                     }
                     else
                         path_matrix(2, i) = 0.0; // No velocity at the start and end points
@@ -791,8 +800,6 @@ pagmo::vector_double HuskyTestNode::huskyFitness(const pagmo::vector_double& dv)
         husky_output_.fitness_array_[1] = std::numeric_limits<double>::max();
     }
 
-    std::cout << "Fitness array, [0]: " << husky_output_.fitness_array_[0] << " [1]: " << husky_output_.fitness_array_[1] << std::endl;
-
     return husky_output_.fitness_array_;
 }
 
@@ -845,10 +852,12 @@ void HuskyTestNode::ARENAOptimization()
                                                            husky_config.robot_max_speed_)};
     RCLCPP_INFO(get_logger(), "ARENAOptimization => Problem created");
     std::cout << prob_husky << std::endl;
+    int nb_of_decision_variables = prob_husky.get_nx();
+    RCLCPP_INFO(get_logger(), "ARENAOptimization => Number of decision variables: %d", nb_of_decision_variables);
 
     int nb_of_generations = this->get_parameter("optimization.NSGA-II.generations").as_int();
     std::function<void(const pagmo::population&)> show_set_callback = std::bind(&HuskyTestNode::publishSolutionSet, this, std::placeholders::_1);
-    pagmo::algorithm nsga2{pagmo::nsga2(nb_of_generations, 0.95, 10.0, 0.01, 50.0, pagmo::random_device::next(), &show_set_callback)};
+    pagmo::algorithm nsga2{pagmo::nsga2(nb_of_generations, crossover_probability_, crossover_distribution_index_, double(1.0 / nb_of_decision_variables), mutation_distribution_index_, pagmo::random_device::next(), &show_set_callback)};
     pagmo::vector_double adaptive_matrix = pagmo::vector_double(prob_husky.get_nf(), 0.0);
     nsga2.set_adaptive_matrix(adaptive_matrix);
 
@@ -978,19 +987,18 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
 : Node("husky_test_node", options), husky_config(0), traversability_mapping_(std::make_shared<arena_demos::TraversabilityCostmap>()),
   husky_nurbs_analyzer_(nullptr), ompl_planner_(nullptr), nurbs_(nullptr), arena_path_(nullptr)
 {
-    ros_namespace_ = this->get_namespace();
     is_simulation_ = this->get_parameter("use_sim_time").as_bool();
-    
+
     // ROS Publisher Initialization
-    arena_control_points_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(ros_namespace_ + "/arena_control_points", 10);
-    arena_path_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/arena_path", 10);
-    ompl_planner_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/ompl_planner_paths", 10);
-    solution_set_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(ros_namespace_ + "/solution_set", 10);
-    current_goal_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(ros_namespace_ + "/current_goal", 10);
+    arena_control_points_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("arena_control_points", 10);
+    arena_path_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("arena_path", 10);
+    ompl_planner_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("ompl_planner_paths", 10);
+    solution_set_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("solution_set", 10);
+    current_goal_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>("current_goal", 10);
 
     // ROS Subscription Initialization
-    goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(ros_namespace_ + "/goal_pose", 10, std::bind(&HuskyTestNode::goalPoseCallback, this, std::placeholders::_1));
-    planning_activation_sub_ = this->create_subscription<std_msgs::msg::Bool>(ros_namespace_ + "/planning_activation", 10, std::bind(&HuskyTestNode::planningActivationCallback, this, std::placeholders::_1));
+    goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>("/goal_pose", 10, std::bind(&HuskyTestNode::goalPoseCallback, this, std::placeholders::_1));
+    planning_activation_sub_ = this->create_subscription<std_msgs::msg::Bool>("/planning_activation", 10, std::bind(&HuskyTestNode::planningActivationCallback, this, std::placeholders::_1));
     global_grid_map_sub_ = this->create_subscription<grid_map_msgs::msg::GridMap>("/global_grid_map", 10, std::bind(&HuskyTestNode::globalGridMapCallback, this, std::placeholders::_1));
 
     if (is_simulation_)
@@ -1008,6 +1016,10 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
     // Make sure the population size is divisible by 4
     if (population_size_ % 4 != 0)
         population_size_ += 4 - (population_size_ % 4);
+    
+    crossover_probability_ = this->get_parameter("optimization.NSGA-II.crossover_params.probability").as_double();
+    crossover_distribution_index_ = this->get_parameter("optimization.NSGA-II.crossover_params.distribution_index").as_double();
+    mutation_distribution_index_ = this->get_parameter("optimization.NSGA-II.mutation_params.distribution_index").as_double();
 
     // Define the nurbs_analyzer configurations with ros parameters
     husky_config.robot_mass_ = this->get_parameter("robot.mass").as_double(); // kg

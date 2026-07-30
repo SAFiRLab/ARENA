@@ -32,6 +32,7 @@ def generate_launch_description():
             package='arena_core',
             executable='husky_test_node',
             name='husky_test_node',
+            namespace='husky_test_node',
             parameters=['/home/dev_ws/src/arena_core/demos/config/husky/husky_problem_params.yaml',
                         {'use_sim_time': use_sim_time}],
             output='screen'

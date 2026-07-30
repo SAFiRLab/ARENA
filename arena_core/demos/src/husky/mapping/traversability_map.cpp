@@ -115,12 +115,44 @@ void TraversabilityMap::moveLocalMap(const Eigen::Vector2d &a_pose)
     }
 }
 
-void TraversabilityMap::updateMap(const pcl::PointCloud<pcl::PointXYZ> &a_cloud)
+void TraversabilityMap::updateMap(std::unordered_map<std::string, std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>> &a_clouds)
 {
     if (!global_map_initialized_)
         return;
     
-    if (a_cloud.empty())
+    if (a_clouds.empty())
+        return;
+
+    /*if (a_clouds.find("ground") != a_clouds.end())
+        updateMap(a_clouds["ground"], true);*/
+
+    if (a_clouds.find("non_ground") != a_clouds.end())
+        updateMap(a_clouds["non_ground"]);
+
+    double max_cost = 0.0;
+    for (grid_map::GridMapIterator it(*global_map_); !it.isPastEnd(); ++it)
+    {
+        updateStepAtIter(it);
+        updateSlopeAtIter(it);
+    }
+
+    computeInflatedOccupancy();
+    for (grid_map::GridMapIterator it(*global_map_); !it.isPastEnd(); ++it)
+    {
+        double cost = 0.0;
+        updateCostAtIter(it, cost);
+        if (cost > max_cost)
+            max_cost = cost;
+    }
+    //normalizeLayersAndApplyCost();
+}
+
+void TraversabilityMap::updateMap(const std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> &a_cloud, const bool is_ground)
+{
+    if (!global_map_initialized_)
+        return;
+
+    if (a_cloud->empty())
         return;
 
     std::lock_guard<std::mutex> lock(map_mutex_);
@@ -128,7 +160,7 @@ void TraversabilityMap::updateMap(const pcl::PointCloud<pcl::PointXYZ> &a_cloud)
     max_step_iter_ = 0.0f;
     max_slope_iter_ = 0.0f;
 
-    for (const auto & p : a_cloud.points)
+    for (const auto &p : a_cloud->points)
     {
         if (!std::isfinite(p.z)) continue;
 
@@ -141,18 +173,11 @@ void TraversabilityMap::updateMap(const pcl::PointCloud<pcl::PointXYZ> &a_cloud)
         global_map_->getIndex(pos, index);
 
         updateElevationAtIndex(index, p.z);
-        updateOccupancyRay(start, pos);
+        if (!is_ground)
+            updateOccupancyRay(start, pos);
+        else
+            updateOccupancyLogOddsAtIndex(index, false);
     }
-
-    double max_cost = 0.0;
-    for (grid_map::GridMapIterator it(*global_map_); !it.isPastEnd(); ++it)
-    {
-        updateStepAtIter(it);
-        updateSlopeAtIter(it);
-    }
-
-    computeInflatedOccupancy();
-    normalizeLayersAndApplyCost();
 }
 
 void TraversabilityMap::updateElevationAtIndex(const grid_map::Index &index, const float z)
@@ -270,7 +295,7 @@ void TraversabilityMap::updateStepAtIter(const grid_map::GridMapIterator &it)
         }
     }
 
-    global_map_->at("step", index) = max_step;
+    global_map_->at("step", index) = std::abs(max_step);
 
     if (max_step > max_step_iter_)
         max_step_iter_ = max_step;
@@ -348,7 +373,7 @@ void TraversabilityMap::updateSlopeAtIter(const grid_map::GridMapIterator &it)
 
     double slope = std::atan(gradient_norm);
 
-    global_map_->at("slope", index) = static_cast<float>(slope);
+    global_map_->at("slope", index) = std::abs(static_cast<float>(slope));
 
     if (slope > max_slope_iter_)
         max_slope_iter_ = static_cast<float>(slope);
@@ -463,10 +488,7 @@ void TraversabilityMap::updateCostAtIter(const grid_map::GridMapIterator &it, do
     if (global_map_->isValid(index, "occupancy_probability"))
     {
         if (global_map_->at("occupancy_probability", index) > 0.9f)
-        {
-            global_map_->at("cost", index) = 2.0;
-            return;
-        }
+            global_map_->at("cost", index) = 4.0;
     }
 
     float slope = 0.0f;
@@ -474,16 +496,25 @@ void TraversabilityMap::updateCostAtIter(const grid_map::GridMapIterator &it, do
     float inflated_occupancy = 0.0f;
 
     if (global_map_->isValid(index, "slope"))
+    {
+        // Normalize with a maximum slope of 45 degrees (pi/4 radians)
         slope = global_map_->at("slope", index);
+        if (slope > M_PI_4)
+            global_map_->at("cost", index) = 4.0f;
+        slope = std::clamp(static_cast<float>(slope / M_PI_4), 0.0f, 1.0f);
+    }
 
     if (global_map_->isValid(index, "step"))
+    {
+        // Normalize with a maximum step of 0.5 meters
         step = global_map_->at("step", index);
+        if (step > 0.5f)
+            global_map_->at("cost", index) = 4.0f;
+        step = std::clamp(step / 0.5f, 0.0f, 1.0f);
+    }
 
     if (global_map_->isValid(index, "inflated_occupancy"))
         inflated_occupancy = global_map_->at("inflated_occupancy", index);
-
-    if (step < 0.0f)
-        std::cerr << "Warning: Negative step value at index " << index.transpose() << std::endl;
 
     // ---- TUNABLE WEIGHTS ----
     const float w_slope = 1.0f;
@@ -508,7 +539,7 @@ void TraversabilityMap::normalizeLayersAndApplyCost()
             global_map_->at("step", index) = step / max_step_iter_;
         }
 
-        if (global_map_->isValid(index, "slope") && max_slope_iter_ > 0.0f)
+        if (global_map_->isValid(index, "slope"))
         {
             float slope = global_map_->at("slope", index);
             global_map_->at("slope", index) = slope / max_slope_iter_;

@@ -1,4 +1,4 @@
-husky_test_node:
+/**:
     ros__parameters:
         robot:
             max_speed: 2.0                           # Speed of the robot in m/s
@@ -13,10 +13,10 @@ husky_test_node:
                 population_size: 40                     # Number of individuals in the population
                 generations: 1000                      # Number of generations
                 mutation_params: 
-                    distribution_index: 20.0             # Distribution index of the mutation
+                    distribution_index: 50.0             # Distribution index of the mutation
                 crossover_params:
-                    distribution_index: 20.0             # Distribution index of the crossover
-                    probability: 0.9                     # Probability of crossover
+                    distribution_index: 10.0             # Distribution index of the crossover
+                    probability: 0.95                     # Probability of crossover
             adaptive_costs_weights:
                 time: 1.0                            # Weight of the time cost
                 safety: 0.0                        # Weight of the safety cost
