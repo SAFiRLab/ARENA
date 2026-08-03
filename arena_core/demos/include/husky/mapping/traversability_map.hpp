@@ -80,15 +80,15 @@ public:
 
 private:
 
-    void updateMap(const std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> &a_cloud, const bool is_ground = false);
+    void updateMap(const std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> &a_cloud, std::vector<grid_map::Index> &a_changed_cells, const bool is_ground = false);
     void initializeMaps(const grid_map::Position &a_center);
-    void updateElevationAtIndex(const grid_map::Index &index, const float z);
+    void updateElevationAtIndex(const grid_map::Index &index, const float z, std::vector<grid_map::Index> &a_changed_cells);
     void updateOccupancyLogOddsAtIndex(const grid_map::Index &index, const bool occupied);
-    void updateOccupancyRay(const grid_map::Position &start, const grid_map::Position &end);
-    void updateStepAtIter(const grid_map::GridMapIterator &it);
-    void updateSlopeAtIter(const grid_map::GridMapIterator &it);
+    void updateOccupancyRay(const grid_map::Position &start, const grid_map::Position &end, std::vector<grid_map::Index> &a_changed_cells);
+    void updateStepAtIndex(const grid_map::Index &index);
+    void updateSlopeAtIndex(const grid_map::Index &index);
     void computeInflatedOccupancy();
-    void updateCostAtIter(const grid_map::GridMapIterator &it, double &a_cost);
+    void updateCostAtIndex(const grid_map::Index &index, double &a_cost);
     void normalizeLayersAndApplyCost();
 
     // User-defined attributes

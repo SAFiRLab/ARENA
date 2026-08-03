@@ -28,7 +28,7 @@ public:
 
         is_simulation_ = this->get_parameter("use_sim_time").as_bool();
 
-        //ground_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/travel_node/ground", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::groundCloudCallback, this, _1));
+        ground_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/travel_node/ground", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::groundCloudCallback, this, _1));
         non_ground_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/travel_node/nonground", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::nonGroundCloudCallback, this, _1));
         pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/groundTruth/poseStamped", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::poseCallback, this, _1));
 
@@ -131,7 +131,7 @@ private:
             return;
         
         std::unordered_map<std::string, std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>> clouds;
-        //clouds["ground"] = ground_cloud_;
+        clouds["ground"] = ground_cloud_;
         clouds["non_ground"] = non_ground_cloud_;
 
         traversability_map_.updateMap(clouds);
