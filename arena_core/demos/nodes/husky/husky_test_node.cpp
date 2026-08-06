@@ -227,6 +227,7 @@ private:
     bool is_simulation_ = false;
     bool is_home_position_set_ = false;
     GoalStatus planning_goal_;
+    std::string fixed_frame_ = "global_world";
 
     // For the OMPL planner
     std::shared_ptr<arena_core::OMPLPlanner> ompl_planner_;
@@ -259,7 +260,7 @@ void HuskyTestNode::goalPoseCallback(const geometry_msgs::msg::PointStamped::Sha
 
     geometry_msgs::msg::PointStamped goal_msg;
     goal_msg.header.stamp = this->now();
-    goal_msg.header.frame_id = "world";
+    goal_msg.header.frame_id = "global_world";
     goal_msg.point.x = planning_goal_.goal_.x();
     goal_msg.point.y = planning_goal_.goal_.y();
     goal_msg.point.z = msg->point.z;
@@ -272,6 +273,7 @@ void HuskyTestNode::odometryCallback(const nav_msgs::msg::Odometry::SharedPtr ms
     {
         robot_home_pose_ = Eigen::Vector3d(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z);
         is_home_position_set_ = true;
+        RCLCPP_INFO(get_logger(), "Home position set in field deployement");
     }
 
     current_robot_pose_ = Eigen::Vector3d(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z) - robot_home_pose_;
@@ -314,7 +316,7 @@ void HuskyTestNode::publishARENAPath()
     visualization_msgs::msg::MarkerArray arena_markers;
     visualization_msgs::msg::Marker path_marker, velocities_marker;
 
-    path_marker.header.frame_id = "world";
+    path_marker.header.frame_id = "global_world";
     path_marker.header.stamp = this->now();
     path_marker.ns = "arena_path";
     path_marker.id = 0;
@@ -359,7 +361,10 @@ void HuskyTestNode::publishARENAPath()
                     p.z = 0.0;
                 }
                 else
-                    p.z = elevation;
+                {
+                    //p.z = elevation;
+                    p.z = 0.0;
+                }
             }
             catch(const std::exception& e)
             {
@@ -399,7 +404,7 @@ void HuskyTestNode::publishControlPoints()
         return;
 
     visualization_msgs::msg::Marker control_points_marker;
-    control_points_marker.header.frame_id = "world";
+    control_points_marker.header.frame_id = "global_world";
     control_points_marker.header.stamp = this->now();
     control_points_marker.ns = "control_points";
     control_points_marker.id = 0;
@@ -428,7 +433,10 @@ void HuskyTestNode::publishControlPoints()
             p.z = 0.0;
         }
         else
-            p.z = elevation;
+        {
+            //p.z = elevation;
+            p.z = 0.0;
+        }
 
         control_points_marker.points.push_back(p);
         control_points_marker.colors.push_back(control_points_marker.color);
@@ -451,7 +459,7 @@ void HuskyTestNode::publishOMPLPlannerPaths()
     {
         const auto& path = initial_paths_[i];
         visualization_msgs::msg::Marker path_marker;
-        path_marker.header.frame_id = "world";
+        path_marker.header.frame_id = "global_world";
         path_marker.header.stamp = this->now();
         path_marker.ns = "ompl_planner_path_";
         path_marker.id = i;
@@ -478,7 +486,10 @@ void HuskyTestNode::publishOMPLPlannerPaths()
                 p.z = 0.0;
             }
             else
-                p.z = elevation;
+            {
+                //p.z = elevation;
+                p.z = 0.0;
+            }
 
             path_marker.points.push_back(p);
         }
@@ -551,7 +562,7 @@ void HuskyTestNode::publishSolutionSet(const pagmo::population& pop)
     for (int i = 0; i < pop.size(); i++)
     {
         visualization_msgs::msg::Marker pose_marker;
-        pose_marker.header.frame_id = "world"; 
+        pose_marker.header.frame_id = "global_world"; 
         pose_marker.header.stamp = this->now();
         pose_marker.ns = "solution_set";
         pose_marker.id = i;
@@ -578,7 +589,10 @@ void HuskyTestNode::publishSolutionSet(const pagmo::population& pop)
                 a_point.z = 0.0;
             }
             else
-                a_point.z = elevation;
+            {
+                //a_point.z = elevation;
+                a_point.z = 0.0;
+            }
             pose_marker.points.push_back(a_point);
         }
 
@@ -614,19 +628,20 @@ std::vector<arena_core::ControlPoint<double, 3>> HuskyTestNode::pagmoDVToControl
     // Push first control point
     Eigen::VectorXd start(3);
     start << start_point_(0), start_point_(1), 0.0; // Assuming the 3th dimension is velocity
-    control_points.push_back(arena_core::ControlPoint<double, 3>(start, dv[0]));
+    unsigned int next_id = 0;
+    control_points.push_back(arena_core::ControlPoint<double, 3>(start, next_id++, dv[0]));
 
     for (int i = 1; i < dv.size() - 1; i += 4)
     {
         Eigen::VectorXd cp(3);
         cp << dv[i], dv[i + 1], dv[i + 2]; // Assuming the 3th dimension is velocity
-        control_points.push_back(arena_core::ControlPoint<double, 3>(cp, dv[i + 3]));
+        control_points.push_back(arena_core::ControlPoint<double, 3>(cp, next_id++, dv[i + 3]));
     }
 
     // Push the last control point
     Eigen::VectorXd end(3);
     end << goal_point_(0), goal_point_(1), 0.0; // Assuming the 3th dimension is velocity
-    control_points.push_back(arena_core::ControlPoint<double, 3>(end, dv[dv.size() - 1]));
+    control_points.push_back(arena_core::ControlPoint<double, 3>(end, next_id, dv[dv.size() - 1]));
 
     return control_points;
 }
@@ -696,7 +711,7 @@ void HuskyTestNode::initializerPlanning()
             // Publish empty path to clear previous visualizations
             visualization_msgs::msg::MarkerArray empty_path;
             visualization_msgs::msg::Marker empty_marker;
-            empty_marker.header.frame_id = "world";
+            empty_marker.header.frame_id = "global_world";
             empty_marker.header.stamp = this->now();
 
             arena_path_pub_->publish(empty_path);
@@ -792,7 +807,31 @@ pagmo::vector_double HuskyTestNode::huskyFitness(const pagmo::vector_double& dv)
 
     // Evaluate the NURBS curve using the Husky NURBS Analyzer
     husky_nurbs_analyzer_->eval(pt, husky_output_);
-    
+
+    // Loop-proof, sampling-free floor on time cost: the control polygon's
+    // length is a guaranteed upper bound on the curve's true arc length (a
+    // standard convex-hull/variation-diminishing property of B-spline/NURBS
+    // curves with local support -- a curve segment can only loop within some
+    // parameter interval if its local active control points themselves
+    // spread out and back to create that loop). So any curve loop, no matter
+    // how small in parameter space and regardless of whether it falls
+    // between two of the analyzer's discrete evaluation samples, still shows
+    // up here as real, unavoidable extra distance.
+    double control_polygon_time = 0.0;
+    for (size_t i = 0; i + 1 < control_points.size(); ++i)
+    {
+        const double dx = control_points[i + 1][0] - control_points[i][0];
+        const double dy = control_points[i + 1][1] - control_points[i][1];
+        const double segment_distance = std::sqrt(dx * dx + dy * dy);
+        const double avg_velocity = (control_points[i][2] + control_points[i + 1][2]) / 2.0;
+
+        if (avg_velocity <= 1.0e-6)
+            control_polygon_time += segment_distance / (avg_velocity + 1.0e-6);
+        else
+            control_polygon_time += segment_distance / avg_velocity;
+    }
+    husky_output_.fitness_array_[0] = std::max(husky_output_.fitness_array_[0], control_polygon_time);
+
     if (husky_output_.constraint_array_[0] > 0.9)
     {
         // Reject the solution if it's in collision with the environment
@@ -857,7 +896,7 @@ void HuskyTestNode::ARENAOptimization()
 
     int nb_of_generations = this->get_parameter("optimization.NSGA-II.generations").as_int();
     std::function<void(const pagmo::population&)> show_set_callback = std::bind(&HuskyTestNode::publishSolutionSet, this, std::placeholders::_1);
-    pagmo::algorithm nsga2{pagmo::nsga2(nb_of_generations, crossover_probability_, crossover_distribution_index_, double(1.0 / nb_of_decision_variables), mutation_distribution_index_, pagmo::random_device::next(), &show_set_callback)};
+    pagmo::algorithm nsga2{pagmo::nsga2(nb_of_generations, crossover_probability_, crossover_distribution_index_, 0.01, mutation_distribution_index_, pagmo::random_device::next(), &show_set_callback)};
     pagmo::vector_double adaptive_matrix = pagmo::vector_double(prob_husky.get_nf(), 0.0);
     nsga2.set_adaptive_matrix(adaptive_matrix);
 
@@ -989,6 +1028,11 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
 {
     is_simulation_ = this->get_parameter("use_sim_time").as_bool();
 
+    if (is_simulation_)
+        RCLCPP_INFO(get_logger(), "Launching ARENA in simulation");
+    else
+        RCLCPP_INFO(get_logger(), "Launching ARENA in field deployment");
+
     // ROS Publisher Initialization
     arena_control_points_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("arena_control_points", 10);
     arena_path_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("arena_path", 10);
@@ -1010,6 +1054,7 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
         // Data coming from a GPS's odometry
         odometry_sub_ = this->create_subscription<nav_msgs::msg::Odometry>("/odometry", 10, std::bind(&HuskyTestNode::odometryCallback, this, std::placeholders::_1));
         is_home_position_set_ = false;
+        RCLCPP_INFO(get_logger(), "Odometry subscription on field deployement done!");
     }
     
     population_size_ = this->get_parameter("optimization.NSGA-II.population_size").as_int();

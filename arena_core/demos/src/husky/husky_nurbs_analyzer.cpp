@@ -92,7 +92,9 @@ void HuskyNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_core:
     if (a_output.constraint_size_ > 0 && a_output.constraint_array_.size() != a_output.constraint_size_)
         throw std::runtime_error("Constraint array size does not match the expected constraint output size.");
 
-    for (unsigned int i = 0; i < husky_config_.base_config.sample_size - 1; i++)
+    const Eigen::Index num_points = a_curve_points.cols();
+
+    for (Eigen::Index i = 0; i < num_points - 1; i++)
     {
         Eigen::Map<const Eigen::Vector2d> point1(a_curve_points.col(i).data());
         Eigen::Map<const Eigen::Vector2d> point2(a_curve_points.col(i + 1).data());
@@ -166,7 +168,13 @@ void HuskyNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_core:
         }
     }*/
 
-    Eigen::Map<const Eigen::Vector2d> last_point(a_curve_points.col(husky_config_.base_config.sample_size - 1).data());
+    Eigen::Map<const Eigen::Vector2d> last_point(a_curve_points.col(num_points - 1).data());
+    Eigen::Map<const Eigen::Vector2d> second_last_point(a_curve_points.col(num_points - 2).data());
+    double last_distance = (last_point - second_last_point).norm();
+    double last_velocity = a_curve_points(2, num_points - 1); // Assuming the 3th column is velocity
+    double second_last_velocity = a_curve_points(2, num_points - 2);
+    double last_velocity_DUA = (last_velocity + second_last_velocity) / 2.0; // Assuming the 3th column is velocity
+    evalTimeCost(last_distance, last_velocity_DUA);
 
     evalSafetyCost(last_point);
 

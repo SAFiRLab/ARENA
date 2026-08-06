@@ -120,8 +120,11 @@ std::pair<vector_double, vector_double> husky_problem::get_bounds() const
     vector_double lb(m_dim);
     vector_double ub(m_dim);
 
-    lb[0] = 0.0;
-    ub[0] = 10.0;
+    // Weight bounds are kept strictly positive: ControlPoint::setW() rejects
+    // non-positive weights, and a weight of exactly 0 would make Nurbs::evaluate()'s
+    // perspective division degenerate.
+    lb[0] = 0.1;
+    ub[0] = 5.0;
 
     for (vector_double::size_type i = 1; i < m_dim - 1; i+=4)
     {
@@ -131,12 +134,12 @@ std::pair<vector_double, vector_double> husky_problem::get_bounds() const
         ub[i+1] = m_y_bounds[1];
         lb[i+2] = 0.0;
         ub[i+2] = m_robot_speed_;
-        lb[i+3] = 0.0;
-        ub[i+3] = 10.0;
+        lb[i+3] = 0.1;
+        ub[i+3] = 5.0;
     }
 
-    lb[m_dim - 1] = 0.0;
-    ub[m_dim - 1] = 10.0;
+    lb[m_dim - 1] = 0.1;
+    ub[m_dim - 1] = 5.0;
 
     return {lb, ub};
 }
