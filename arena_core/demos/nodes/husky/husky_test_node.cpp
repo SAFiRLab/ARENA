@@ -227,7 +227,7 @@ private:
     bool is_simulation_ = false;
     bool is_home_position_set_ = false;
     GoalStatus planning_goal_;
-    std::string fixed_frame_ = "global_world";
+    std::string fixed_frame_ = "world";
 
     // For the OMPL planner
     std::shared_ptr<arena_core::OMPLPlanner> ompl_planner_;
@@ -260,7 +260,7 @@ void HuskyTestNode::goalPoseCallback(const geometry_msgs::msg::PointStamped::Sha
 
     geometry_msgs::msg::PointStamped goal_msg;
     goal_msg.header.stamp = this->now();
-    goal_msg.header.frame_id = "global_world";
+    goal_msg.header.frame_id = fixed_frame_;
     goal_msg.point.x = planning_goal_.goal_.x();
     goal_msg.point.y = planning_goal_.goal_.y();
     goal_msg.point.z = msg->point.z;
@@ -316,7 +316,7 @@ void HuskyTestNode::publishARENAPath()
     visualization_msgs::msg::MarkerArray arena_markers;
     visualization_msgs::msg::Marker path_marker, velocities_marker;
 
-    path_marker.header.frame_id = "global_world";
+    path_marker.header.frame_id = fixed_frame_;
     path_marker.header.stamp = this->now();
     path_marker.ns = "arena_path";
     path_marker.id = 0;
@@ -404,7 +404,7 @@ void HuskyTestNode::publishControlPoints()
         return;
 
     visualization_msgs::msg::Marker control_points_marker;
-    control_points_marker.header.frame_id = "global_world";
+    control_points_marker.header.frame_id = fixed_frame_;
     control_points_marker.header.stamp = this->now();
     control_points_marker.ns = "control_points";
     control_points_marker.id = 0;
@@ -459,7 +459,7 @@ void HuskyTestNode::publishOMPLPlannerPaths()
     {
         const auto& path = initial_paths_[i];
         visualization_msgs::msg::Marker path_marker;
-        path_marker.header.frame_id = "global_world";
+        path_marker.header.frame_id = fixed_frame_;
         path_marker.header.stamp = this->now();
         path_marker.ns = "ompl_planner_path_";
         path_marker.id = i;
@@ -562,7 +562,7 @@ void HuskyTestNode::publishSolutionSet(const pagmo::population& pop)
     for (int i = 0; i < pop.size(); i++)
     {
         visualization_msgs::msg::Marker pose_marker;
-        pose_marker.header.frame_id = "global_world"; 
+        pose_marker.header.frame_id = fixed_frame_; 
         pose_marker.header.stamp = this->now();
         pose_marker.ns = "solution_set";
         pose_marker.id = i;
@@ -711,7 +711,7 @@ void HuskyTestNode::initializerPlanning()
             // Publish empty path to clear previous visualizations
             visualization_msgs::msg::MarkerArray empty_path;
             visualization_msgs::msg::Marker empty_marker;
-            empty_marker.header.frame_id = "global_world";
+            empty_marker.header.frame_id = fixed_frame_;
             empty_marker.header.stamp = this->now();
 
             arena_path_pub_->publish(empty_path);
@@ -1047,7 +1047,7 @@ HuskyTestNode::HuskyTestNode(rclcpp::NodeOptions options)
 
     if (is_simulation_)
     {
-        robot_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/groundTruth/poseStamped", 10, std::bind(&HuskyTestNode::robotPoseCallback, this, std::placeholders::_1));
+        robot_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/pose", 10, std::bind(&HuskyTestNode::robotPoseCallback, this, std::placeholders::_1));
     }
     else
     {

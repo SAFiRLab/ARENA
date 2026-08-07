@@ -87,9 +87,9 @@ private:
     void updateOccupancyRay(const grid_map::Position &start, const grid_map::Position &end, std::vector<grid_map::Index> &a_changed_cells);
     void updateStepAtIndex(const grid_map::Index &index);
     void updateSlopeAtIndex(const grid_map::Index &index);
+    void reconcileOccupancyWithTerrain(const grid_map::Index &index);
     void computeInflatedOccupancy();
     void updateCostAtIndex(const grid_map::Index &index, double &a_cost);
-    void normalizeLayersAndApplyCost();
 
     // User-defined attributes
     std::shared_ptr<grid_map::GridMap> global_map_;
@@ -99,8 +99,6 @@ private:
     std::mutex map_mutex_;
     bool global_map_initialized_ = false;
     RobotBoundingBox robot_bb_;
-    float max_step_iter_ = 0.0f;
-    float max_slope_iter_ = 0.0f;
 
 }; // class TraversabilityMap
 

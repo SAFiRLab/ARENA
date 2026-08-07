@@ -26,17 +26,12 @@ public:
     {
         using std::placeholders::_1;
 
-        is_simulation_ = this->get_parameter("use_sim_time").as_bool();
-
         ground_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/travel_node/ground", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::groundCloudCallback, this, _1));
         non_ground_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/travel_node/nonground", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::nonGroundCloudCallback, this, _1));
-        pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/groundTruth/poseStamped", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::poseCallback, this, _1));
+        pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/pose", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::poseCallback, this, _1));
 
-        if (is_simulation_)
-            imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>("imu", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::imuCallback, this, _1));
-        //else
-            //imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>("/imu/data", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::imuCallback, this, _1)); // TODO
-
+        imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>("/imu", rclcpp::SensorDataQoS(), std::bind(&TraversabilityMappingNode::imuCallback, this, _1));
+        
         local_pub_ = this->create_publisher<grid_map_msgs::msg::GridMap>("/local_grid_map", rclcpp::QoS(1));
         global_pub_ = this->create_publisher<grid_map_msgs::msg::GridMap>("/global_grid_map", rclcpp::QoS(1).transient_local());
 
@@ -105,6 +100,28 @@ private:
     void imuCallback(const sensor_msgs::msg::Imu::SharedPtr a_msg)
     {
         imu_data_ = a_msg;
+
+        Eigen::Vector3d current_angular_velocity(a_msg->angular_velocity.x, a_msg->angular_velocity.y, a_msg->angular_velocity.z);
+        rclcpp::Time current_stamp(a_msg->header.stamp);
+
+        // Detected at the IMU's native rate (not just once per 10 Hz map
+        // tick) so a brief transient can't fall entirely between two ticks.
+        if (has_prev_angular_velocity_)
+        {
+            double dt = (current_stamp - prev_imu_stamp_).seconds();
+            if (dt > 0.0)
+            {
+                double angular_acceleration_threshold = 5.0; // rad/s^2, TODO: tune against a real stop/start suspension nod
+                double angular_acceleration = (current_angular_velocity - prev_angular_velocity_).norm() / dt;
+
+                if (angular_acceleration > angular_acceleration_threshold)
+                    motion_transient_detected_ = true;
+            }
+        }
+
+        prev_angular_velocity_ = current_angular_velocity;
+        prev_imu_stamp_ = current_stamp;
+        has_prev_angular_velocity_ = true;
     }
 
     void updateMap()
@@ -127,6 +144,17 @@ private:
             }
         }
 
+        // The husky's suspension produces a brief pitch/roll "nod" at
+        // stop/start, turning the pointcloud with it during the sweep. This
+        // is a sharp transient rather than sustained rotation, so it is
+        // caught separately in imuCallback() as an angular-velocity delta.
+        if (motion_transient_detected_)
+        {
+            RCLCPP_WARN(this->get_logger(), "Detected a sharp angular-velocity transient (likely suspension-induced pointcloud skew) -- skipping this update.");
+            motion_transient_detected_ = false;
+            return; // Skip updating the map
+        }
+
         if (!ground_cloud_ && !non_ground_cloud_)
             return;
         
@@ -135,6 +163,12 @@ private:
         clouds["non_ground"] = non_ground_cloud_;
 
         traversability_map_.updateMap(clouds);
+
+        // Each cloud is one independent scan observation for the log-odds
+        // filter. If a fresh one isn't ready by the next tick, we must
+        // wait for it rather than re-integrating this same scan again.
+        ground_cloud_ = nullptr;
+        non_ground_cloud_ = nullptr;
     }
 
     void publishLocalMap()
@@ -194,7 +228,10 @@ private:
     std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> non_ground_cloud_;
     std::shared_ptr<sensor_msgs::msg::Imu> imu_data_;
 
-    bool is_simulation_ = false;
+    Eigen::Vector3d prev_angular_velocity_ = Eigen::Vector3d::Zero();
+    rclcpp::Time prev_imu_stamp_;
+    bool has_prev_angular_velocity_ = false;
+    bool motion_transient_detected_ = false;
 };
 
 
