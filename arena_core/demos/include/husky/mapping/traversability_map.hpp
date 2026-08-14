@@ -34,12 +34,12 @@
 #include <pcl/point_types.h>
 
 // grid_map
-#include <grid_map_core/iterators/GridMapIterator.hpp>
 #include <grid_map_core/GridMap.hpp>
 
 #include <mutex>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace arena_demos
@@ -103,7 +103,8 @@ public:
     TraversabilityMap(const RobotBoundingBox &a_robot_bb);
     
     void moveLocalMap(const Eigen::Vector2d &a_pose);
-    void updateMap(std::unordered_map<std::string, std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>> &a_clouds);
+    void updateMap(const std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> &a_ground_cloud,
+                    const std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> &a_non_ground_cloud);
 
     std::shared_ptr<grid_map::GridMap> getLocalMap() { return local_map_; };
     std::shared_ptr<grid_map::GridMap> getGlobalMap() { return global_map_; };
@@ -122,6 +123,11 @@ private:
     void computeInflatedOccupancy();
     void updateCostAtIndex(const grid_map::Index &index, double &a_cost);
 
+    // Records index as changed if it hasn't already been recorded this
+    // update (O(1) average via changed_cells_lookup_, instead of an O(n)
+    // linear scan of a_changed_cells).
+    void markCellChanged(const grid_map::Index &index, std::vector<grid_map::Index> &a_changed_cells);
+
     // User-defined attributes
     std::shared_ptr<grid_map::GridMap> global_map_;
     std::shared_ptr<grid_map::GridMap> local_map_;
@@ -131,6 +137,26 @@ private:
     bool global_map_initialized_ = false;
     RobotBoundingBox robot_bb_;
     TraversabilityMapConfig config_;
+
+    // Raw pointers into global_map_'s own layer storage, cached once in
+    // initializeMaps() to avoid a hashed string lookup on every access.
+    // Valid for the lifetime of global_map_, which is created exactly once
+    // and never has layers added to or erased from it afterward.
+    grid_map::Matrix *elevation_mean_ = nullptr;
+    grid_map::Matrix *elevation_variance_ = nullptr;
+    grid_map::Matrix *elevation_num_measurements_ = nullptr;
+    grid_map::Matrix *elevation_reject_streak_ = nullptr;
+    grid_map::Matrix *step_ = nullptr;
+    grid_map::Matrix *slope_ = nullptr;
+    grid_map::Matrix *occupancy_logodds_ = nullptr;
+    grid_map::Matrix *occupancy_probability_ = nullptr;
+    grid_map::Matrix *inflated_occupancy_ = nullptr;
+    grid_map::Matrix *cost_ = nullptr;
+
+    // Scratch buffers for updateMap(), cleared (not reallocated) at the
+    // start of each call so their capacity is reused across scans.
+    std::vector<grid_map::Index> changed_cells_;
+    std::unordered_set<int64_t> changed_cells_lookup_;
 
 }; // class TraversabilityMap
 

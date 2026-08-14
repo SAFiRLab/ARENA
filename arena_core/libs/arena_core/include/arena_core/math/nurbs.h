@@ -321,6 +321,27 @@ public:
         return adequate_conf_;
     };
 
+    /**
+     * @brief Set the weight of a specific control point at the given index.
+     *
+     * @param a_weight The new weight to set (must be positive).
+     * @param a_index The index of the control point to update.
+     * @return True if the Nurbs configuration is adequate, false otherwise.
+     */
+    bool setWeight(double a_weight, int a_index)
+    {
+        adequate_conf_ = false;
+        if (0 <= a_index && a_index < control_points_.size() && a_weight > 0.0)
+        {
+            control_points_[a_index].setW(a_weight);
+            adequate_conf_ = initialize();
+        }
+        else
+            std::cout << "Invalid weight or index for setWeight." << std::endl;
+
+        return adequate_conf_;
+    };
+
     /************* Getters *************/
     /**
      * @brief Get the degree of the NURBS curve.

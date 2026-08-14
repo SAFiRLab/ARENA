@@ -93,10 +93,10 @@ private:
             return;
         }
 
-        pcl::PointCloud<pcl::PointXYZ> cloud;
-        pcl::fromROSMsg(cloud_world, cloud);
+        auto cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+        pcl::fromROSMsg(cloud_world, *cloud);
 
-        non_ground_cloud_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(cloud);
+        non_ground_cloud_ = std::move(cloud);
     }
 
     void groundCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr a_msg)
@@ -116,10 +116,10 @@ private:
             return;
         }
 
-        pcl::PointCloud<pcl::PointXYZ> cloud;
-        pcl::fromROSMsg(cloud_world, cloud);
+        auto cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+        pcl::fromROSMsg(cloud_world, *cloud);
 
-        ground_cloud_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(cloud);
+        ground_cloud_ = std::move(cloud);
     }
 
     void imuCallback(const sensor_msgs::msg::Imu::SharedPtr a_msg)
@@ -183,11 +183,7 @@ private:
         if (!ground_cloud_ && !non_ground_cloud_)
             return;
         
-        std::unordered_map<std::string, std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>> clouds;
-        clouds["ground"] = ground_cloud_;
-        clouds["non_ground"] = non_ground_cloud_;
-
-        traversability_map_->updateMap(clouds);
+        traversability_map_->updateMap(ground_cloud_, non_ground_cloud_);
 
         // Each cloud is one independent scan observation for the log-odds
         // filter. If a fresh one isn't ready by the next tick, we must

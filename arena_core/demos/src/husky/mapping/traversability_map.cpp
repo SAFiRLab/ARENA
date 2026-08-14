@@ -1,23 +1,23 @@
 /**
  * BSD 3-Clause License
- * 
+ *
  * Copyright (c) 2025, David-Alexandre Poissant, Université de Sherbrooke
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * 1. Redistributions of source code must retain the above copyright notice, this
  *    list of conditions and the following disclaimer.
- * 
+ *
  * 2. Redistributions in binary form must reproduce the above copyright notice,
  *    this list of conditions and the following disclaimer in the documentation
  *    and/or other materials provided with the distribution.
- * 
+ *
  * 3. Neither the name of the copyright holder nor the names of its
  *    contributors may be used to endorse or promote products derived from
  *    this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -36,7 +36,6 @@
 #include <grid_map_core/iterators/LineIterator.hpp>
 
 // System
-#include <unordered_set>
 #include <queue>
 #include <vector>
 #include <iostream>
@@ -49,8 +48,16 @@ constexpr float MIN_L = -5.0f;
 constexpr float MAX_L = 5.0f;
 
 // A cell must accumulate this many elevation measurements before its
-// step/slope layers are considered statistically reliable 
+// step/slope layers are considered statistically reliable
 constexpr float kReliableMeasurementCount = 15.0f;
+
+
+// Packs a cell index into a single key for O(1) average set membership
+// checks (grid_map::Index has no std::hash specialization).
+int64_t packIndex(const grid_map::Index &index)
+{
+    return (static_cast<int64_t>(index.x()) << 32) | static_cast<uint32_t>(index.y());
+}
 
 
 namespace arena_demos
@@ -88,16 +95,31 @@ void TraversabilityMap::initializeMaps(const grid_map::Position &a_center)
     global_map_->setFrameId(config_.root_frame);
 
     global_map_->setGeometry(grid_map::Length(config_.global_map_size_x, config_.global_map_size_y), config_.map_resolution, a_center);
-    (*global_map_)["elevation_mean"].setConstant(std::numeric_limits<float>::quiet_NaN());
-    (*global_map_)["elevation_variance"].setConstant(std::numeric_limits<float>::quiet_NaN());
-    (*global_map_)["elevation_num_measurements"].setConstant(0.0f);
-    (*global_map_)["elevation_reject_streak"].setConstant(0.0f);
-    (*global_map_)["step"].setConstant(std::numeric_limits<float>::quiet_NaN());
-    (*global_map_)["slope"].setConstant(std::numeric_limits<float>::quiet_NaN());
-    (*global_map_)["occupancy_logodds"].setZero();
-    (*global_map_)["occupancy_probability"].setConstant(0.0f);
-    (*global_map_)["inflated_occupancy"].setConstant(0.0f);
-    (*global_map_)["cost"].setConstant(static_cast<float>(config_.unknown_cost));
+
+    // Cache raw pointers into global_map_'s own layer storage. These stay
+    // valid for the lifetime of global_map_: it is created exactly once,
+    // here, and never has layers added to or erased from it afterward.
+    elevation_mean_ = &global_map_->get("elevation_mean");
+    elevation_variance_ = &global_map_->get("elevation_variance");
+    elevation_num_measurements_ = &global_map_->get("elevation_num_measurements");
+    elevation_reject_streak_ = &global_map_->get("elevation_reject_streak");
+    step_ = &global_map_->get("step");
+    slope_ = &global_map_->get("slope");
+    occupancy_logodds_ = &global_map_->get("occupancy_logodds");
+    occupancy_probability_ = &global_map_->get("occupancy_probability");
+    inflated_occupancy_ = &global_map_->get("inflated_occupancy");
+    cost_ = &global_map_->get("cost");
+
+    elevation_mean_->setConstant(std::numeric_limits<float>::quiet_NaN());
+    elevation_variance_->setConstant(std::numeric_limits<float>::quiet_NaN());
+    elevation_num_measurements_->setConstant(0.0f);
+    elevation_reject_streak_->setConstant(0.0f);
+    step_->setConstant(std::numeric_limits<float>::quiet_NaN());
+    slope_->setConstant(std::numeric_limits<float>::quiet_NaN());
+    occupancy_logodds_->setZero();
+    occupancy_probability_->setConstant(0.0f);
+    inflated_occupancy_->setConstant(0.0f);
+    cost_->setConstant(static_cast<float>(config_.unknown_cost));
 
     // ----- LOCAL MAP -----
     local_map_ = std::make_shared<grid_map::GridMap>(std::vector<std::string>{"elevation_mean"});
@@ -129,26 +151,26 @@ void TraversabilityMap::moveLocalMap(const Eigen::Vector2d &a_pose)
     }
 }
 
-void TraversabilityMap::updateMap(std::unordered_map<std::string, std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>> &a_clouds)
+void TraversabilityMap::updateMap(const std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> &a_ground_cloud,
+                                   const std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> &a_non_ground_cloud)
 {
     if (!global_map_initialized_)
         return;
-    
-    if (a_clouds.empty())
+
+    if (!a_ground_cloud && !a_non_ground_cloud)
         return;
 
-    // vector of changed cells to update layers after processing all points
-    std::vector<grid_map::Index> changed_cells;
+    // Scratch buffers reused across scans: clear() keeps prior capacity.
+    changed_cells_.clear();
+    changed_cells_lookup_.clear();
 
-    auto ground_it = a_clouds.find("ground");
-    if (ground_it != a_clouds.end() && ground_it->second)
-        updateMap(ground_it->second, changed_cells, true);
+    if (a_ground_cloud)
+        updateMap(a_ground_cloud, changed_cells_, true);
 
-    auto non_ground_it = a_clouds.find("non_ground");
-    if (non_ground_it != a_clouds.end() && non_ground_it->second)
-        updateMap(non_ground_it->second, changed_cells);
+    if (a_non_ground_cloud)
+        updateMap(a_non_ground_cloud, changed_cells_);
 
-    for (const auto &index : changed_cells)
+    for (const auto &index : changed_cells_)
     {
         updateStepAtIndex(index);
         updateSlopeAtIndex(index);
@@ -156,11 +178,16 @@ void TraversabilityMap::updateMap(std::unordered_map<std::string, std::shared_pt
     }
 
     computeInflatedOccupancy();
-    for (grid_map::GridMapIterator it(*global_map_); !it.isPastEnd(); ++it)
+
+    const grid_map::Size map_size = global_map_->getSize();
+    for (int x = 0; x < map_size(0); ++x)
     {
-        grid_map::Index index = *it;
-        double cost = 0.0;
-        updateCostAtIndex(index, cost);
+        for (int y = 0; y < map_size(1); ++y)
+        {
+            grid_map::Index index(x, y);
+            double cost = 0.0;
+            updateCostAtIndex(index, cost);
+        }
     }
 }
 
@@ -180,20 +207,18 @@ void TraversabilityMap::updateMap(const std::shared_ptr<pcl::PointCloud<pcl::Poi
         if (!std::isfinite(p.z)) continue;
 
         grid_map::Position pos(p.x, p.y);
-        if (!global_map_->isInside(pos)) continue;
+        grid_map::Index index;
+        if (!global_map_->getIndex(pos, index)) continue;
 
         if (robot_bb_.isInside(local_map_pose_, pos)) continue;
-
-        grid_map::Index index;
-        global_map_->getIndex(pos, index);
 
         if (!is_ground)
             updateOccupancyRay(start, pos, a_changed_cells);
         else
         {
-            const bool terrain_reliable = global_map_->at("elevation_num_measurements", index) >= kReliableMeasurementCount;
-            const bool step_confirms_obstacle = global_map_->isValid(index, "step") && global_map_->at("step", index) >= config_.max_step;
-            const bool slope_confirms_obstacle = global_map_->isValid(index, "slope") && global_map_->at("slope", index) >= config_.max_slope;
+            const bool terrain_reliable = (*elevation_num_measurements_)(index.x(), index.y()) >= kReliableMeasurementCount;
+            const bool step_confirms_obstacle = !std::isnan((*step_)(index.x(), index.y())) && (*step_)(index.x(), index.y()) >= config_.max_step;
+            const bool slope_confirms_obstacle = !std::isnan((*slope_)(index.x(), index.y())) && (*slope_)(index.x(), index.y()) >= config_.max_slope;
 
             // A ground label is authoritative and should immediately override
             // noise-driven false occupancy, unless the terrain has already
@@ -202,9 +227,9 @@ void TraversabilityMap::updateMap(const std::shared_ptr<pcl::PointCloud<pcl::Poi
             // observation and must not erase confirmed evidence.
             if (!(terrain_reliable && (step_confirms_obstacle || slope_confirms_obstacle)))
             {
-                global_map_->at("occupancy_logodds", index) = 0.0f;
-                global_map_->at("occupancy_probability", index) = 0.0f;
-                global_map_->at("inflated_occupancy", index) = 0.0f;
+                (*occupancy_logodds_)(index.x(), index.y()) = 0.0f;
+                (*occupancy_probability_)(index.x(), index.y()) = 0.0f;
+                (*inflated_occupancy_)(index.x(), index.y()) = 0.0f;
             }
         }
 
@@ -212,19 +237,29 @@ void TraversabilityMap::updateMap(const std::shared_ptr<pcl::PointCloud<pcl::Poi
     }
 }
 
+void TraversabilityMap::markCellChanged(const grid_map::Index &index, std::vector<grid_map::Index> &a_changed_cells)
+{
+    if (changed_cells_lookup_.insert(packIndex(index)).second)
+        a_changed_cells.push_back(index);
+}
+
 void TraversabilityMap::updateElevationAtIndex(const grid_map::Index &index, const float z, std::vector<grid_map::Index> &a_changed_cells)
 {
-    if (!global_map_->isValid(index, "elevation_mean"))
+    if (std::isnan((*elevation_mean_)(index.x(), index.y())))
     {
-        global_map_->at("elevation_mean", index) = z;
-        global_map_->at("elevation_variance", index) = 0.1f;
-        global_map_->at("elevation_num_measurements", index) = 1.0f;
-        global_map_->at("elevation_reject_streak", index) = 0.0f;
+        (*elevation_mean_)(index.x(), index.y()) = z;
+        (*elevation_variance_)(index.x(), index.y()) = 0.1f;
+        (*elevation_num_measurements_)(index.x(), index.y()) = 1.0f;
+        (*elevation_reject_streak_)(index.x(), index.y()) = 0.0f;
 
         // A brand-new cell needs its step/slope computed too. Otherwise a
         // cell that never accumulates another measurement (single-pass
         // coverage) would stay frozen at its layer-init "unknown" default
-        // forever.
+        // forever. This push is deliberately unguarded: a non-ground point's
+        // ray endpoint may already have inserted this same index earlier in
+        // this same point's processing, and a duplicate entry here is
+        // harmless since the changed-cell consumers below are idempotent.
+        changed_cells_lookup_.insert(packIndex(index));
         a_changed_cells.push_back(index);
         return;
     }
@@ -242,8 +277,8 @@ void TraversabilityMap::updateElevationAtIndex(const grid_map::Index &index, con
     // and with it, every step/slope value derived from it.
     constexpr float kMaxConsecutiveRejections = 3.0f;
 
-    float mean = global_map_->at("elevation_mean", index);
-    float variance = global_map_->at("elevation_variance", index);
+    float mean = (*elevation_mean_)(index.x(), index.y());
+    float variance = (*elevation_variance_)(index.x(), index.y());
 
     // Prevent variance from collapsing to zero.
     variance += process_noise;
@@ -254,36 +289,30 @@ void TraversabilityMap::updateElevationAtIndex(const grid_map::Index &index, con
     // Innovation covariance
     const float S = variance + measurement_variance;
 
-    auto idx_compare = std::find_if(a_changed_cells.begin(), a_changed_cells.end(), [&](const grid_map::Index& idx)
-    {
-        return (idx == index).all();
-    });
-
     // Optional statistical gating
     if (std::abs(innovation) > 3.0f * std::sqrt(S))
     {
-        const float reject_streak = global_map_->at("elevation_reject_streak", index) + 1.0f;
+        const float reject_streak = (*elevation_reject_streak_)(index.x(), index.y()) + 1.0f;
 
         if (reject_streak < kMaxConsecutiveRejections)
         {
-            global_map_->at("elevation_reject_streak", index) = reject_streak;
+            (*elevation_reject_streak_)(index.x(), index.y()) = reject_streak;
             return;
         }
 
         // The established mean has been consistently contradicted by new
         // data. Treat this cell as unobserved and re-anchor on the new
         // measurement rather than rejecting it too.
-        global_map_->at("elevation_mean", index) = z;
-        global_map_->at("elevation_variance", index) = 0.1f;
-        global_map_->at("elevation_num_measurements", index) = 1.0f;
-        global_map_->at("elevation_reject_streak", index) = 0.0f;
+        (*elevation_mean_)(index.x(), index.y()) = z;
+        (*elevation_variance_)(index.x(), index.y()) = 0.1f;
+        (*elevation_num_measurements_)(index.x(), index.y()) = 1.0f;
+        (*elevation_reject_streak_)(index.x(), index.y()) = 0.0f;
 
-        if (idx_compare == a_changed_cells.end())
-            a_changed_cells.push_back(index);
+        markCellChanged(index, a_changed_cells);
         return;
     }
 
-    global_map_->at("elevation_reject_streak", index) = 0.0f;
+    (*elevation_reject_streak_)(index.x(), index.y()) = 0.0f;
 
     // Kalman gain
     const float K = variance / S;
@@ -292,7 +321,7 @@ void TraversabilityMap::updateElevationAtIndex(const grid_map::Index &index, con
 
     // Read the pre-increment count so we can tell whether this cell is still
     // maturing (the increment happens below).
-    const float prev_num_measurements = global_map_->at("elevation_num_measurements", index);
+    const float prev_num_measurements = (*elevation_num_measurements_)(index.x(), index.y());
 
     // A cell is flagged as "changed" (triggering a step/slope recompute) if
     // EITHER it is still maturing (below the reliability bar), OR, once mature, this update
@@ -302,23 +331,20 @@ void TraversabilityMap::updateElevationAtIndex(const grid_map::Index &index, con
     const bool is_statistically_significant = !is_still_maturing && std::abs(updated_mean - mean) > 3.0f * std::sqrt(variance);
 
     if (is_still_maturing || is_statistically_significant)
-    {
-        if (idx_compare == a_changed_cells.end())
-            a_changed_cells.push_back(index);
-    }
+        markCellChanged(index, a_changed_cells);
 
     // Bayesian update
     mean += K * innovation;
     variance *= (1.0f - K);
 
-    global_map_->at("elevation_mean", index) = mean;
-    global_map_->at("elevation_variance", index) = variance;
-    global_map_->at("elevation_num_measurements", index) += 1.0f;
+    (*elevation_mean_)(index.x(), index.y()) = mean;
+    (*elevation_variance_)(index.x(), index.y()) = variance;
+    (*elevation_num_measurements_)(index.x(), index.y()) += 1.0f;
 }
 
 void TraversabilityMap::updateOccupancyLogOddsAtIndex(const grid_map::Index &index, const bool occupied)
 {
-    float& L = global_map_->at("occupancy_logodds", index);
+    float& L = (*occupancy_logodds_)(index.x(), index.y());
 
     if (occupied)
         L += HIT;
@@ -327,7 +353,7 @@ void TraversabilityMap::updateOccupancyLogOddsAtIndex(const grid_map::Index &ind
 
     L = std::clamp(L, MIN_L, MAX_L);
 
-    global_map_->at("occupancy_probability",index) = 1.f / (1.f + std::exp(-L));
+    (*occupancy_probability_)(index.x(), index.y()) = 1.f / (1.f + std::exp(-L));
 }
 
 void TraversabilityMap::updateOccupancyRay(const grid_map::Position &start, const grid_map::Position &end, std::vector<grid_map::Index> &a_changed_cells)
@@ -335,20 +361,12 @@ void TraversabilityMap::updateOccupancyRay(const grid_map::Position &start, cons
     for (grid_map::LineIterator it(*global_map_, start, end); !it.isPastEnd(); ++it)
     {
         // Only add cells iter that had their log-odds updated to the changed_cells vector
-        float current_log_odds = global_map_->at("occupancy_logodds", *it);
+        float current_log_odds = (*occupancy_logodds_)((*it).x(), (*it).y());
         updateOccupancyLogOddsAtIndex(*it, false);
-        float updated_log_odds = global_map_->at("occupancy_logodds", *it);
+        float updated_log_odds = (*occupancy_logodds_)((*it).x(), (*it).y());
 
         if (current_log_odds != updated_log_odds)
-        {
-            auto idx_compare = std::find_if(a_changed_cells.begin(), a_changed_cells.end(), [&](const grid_map::Index& idx)
-            {
-                return (idx == *it).all();
-            });
-
-            if (idx_compare == a_changed_cells.end())
-                a_changed_cells.push_back(*it);
-        }
+            markCellChanged(*it, a_changed_cells);
     }
 
     grid_map::Index endpoint;
@@ -356,20 +374,12 @@ void TraversabilityMap::updateOccupancyRay(const grid_map::Position &start, cons
 
     // The endpoint of a non-ground return is a HIT regardless of how many
     // elevation measurements have landed on this exact discretized cell.
-    float current_log_odds = global_map_->at("occupancy_logodds", endpoint);
+    float current_log_odds = (*occupancy_logodds_)(endpoint.x(), endpoint.y());
     updateOccupancyLogOddsAtIndex(endpoint, true);
-    float updated_log_odds = global_map_->at("occupancy_logodds", endpoint);
+    float updated_log_odds = (*occupancy_logodds_)(endpoint.x(), endpoint.y());
 
     if (current_log_odds != updated_log_odds)
-    {
-        auto idx_compare = std::find_if(a_changed_cells.begin(), a_changed_cells.end(), [&](const grid_map::Index& idx)
-        {
-            return (idx == endpoint).all();
-        });
-
-        if (idx_compare == a_changed_cells.end())
-            a_changed_cells.push_back(endpoint);
-    }
+        markCellChanged(endpoint, a_changed_cells);
 }
 
 void TraversabilityMap::updateStepAtIndex(const grid_map::Index &index)
@@ -379,16 +389,16 @@ void TraversabilityMap::updateStepAtIndex(const grid_map::Index &index)
     if (!global_map_->isInside(pos)) return;
 
     // If center cell invalid → step invalid
-    if (!global_map_->isValid(index, "elevation_mean"))
+    if (std::isnan((*elevation_mean_)(index.x(), index.y())))
     {
-        global_map_->at("step", index) = std::numeric_limits<float>::quiet_NaN();
+        (*step_)(index.x(), index.y()) = std::numeric_limits<float>::quiet_NaN();
         return;
     }
 
-    if (global_map_->at("elevation_num_measurements", index) < kReliableMeasurementCount)
+    if ((*elevation_num_measurements_)(index.x(), index.y()) < kReliableMeasurementCount)
         return;
-    
-    const float z_center = global_map_->at("elevation_mean", index);
+
+    const float z_center = (*elevation_mean_)(index.x(), index.y());
     float max_step = 0.0f;
 
     // 8-connected neighborhood
@@ -404,17 +414,17 @@ void TraversabilityMap::updateStepAtIndex(const grid_map::Index &index)
             global_map_->getPosition(neighbor, pos);
             if (!global_map_->isInside(pos)) continue;
 
-            if (!global_map_->isValid(neighbor, "elevation_mean"))
+            if (std::isnan((*elevation_mean_)(neighbor.x(), neighbor.y())))
                 continue;
 
             // A neighbor's own estimate must also be reliable, not merely
             // present. An immature, still-noisy neighbor (e.g. one raw
             // measurement) can otherwise inject a spurious step into an
             // already-reliable center cell's reading.
-            if (global_map_->at("elevation_num_measurements", neighbor) < kReliableMeasurementCount)
+            if ((*elevation_num_measurements_)(neighbor.x(), neighbor.y()) < kReliableMeasurementCount)
                 continue;
 
-            const float z_neighbor = global_map_->at("elevation_mean", neighbor);
+            const float z_neighbor = (*elevation_mean_)(neighbor.x(), neighbor.y());
 
             const float dz = std::abs(z_center - z_neighbor);
 
@@ -425,8 +435,8 @@ void TraversabilityMap::updateStepAtIndex(const grid_map::Index &index)
 
     if (max_step > 10.0f)   // Unreasonably large step this reduces visualization capabilities
         max_step = 10.0f;
-    
-    global_map_->at("step", index) = std::abs(max_step);
+
+    (*step_)(index.x(), index.y()) = std::abs(max_step);
 }
 
 void TraversabilityMap::updateSlopeAtIndex(const grid_map::Index &index)
@@ -435,13 +445,13 @@ void TraversabilityMap::updateSlopeAtIndex(const grid_map::Index &index)
     global_map_->getPosition(index, pos);
     if (!global_map_->isInside(pos)) return;
 
-    if (!global_map_->isValid(index, "elevation_mean"))
+    if (std::isnan((*elevation_mean_)(index.x(), index.y())))
     {
-        global_map_->at("slope", index) = std::numeric_limits<float>::quiet_NaN();
+        (*slope_)(index.x(), index.y()) = std::numeric_limits<float>::quiet_NaN();
         return;
     }
 
-    if (global_map_->at("elevation_num_measurements", index) < kReliableMeasurementCount)
+    if ((*elevation_num_measurements_)(index.x(), index.y()) < kReliableMeasurementCount)
         return;
 
     const double resolution = global_map_->getResolution();
@@ -461,18 +471,18 @@ void TraversabilityMap::updateSlopeAtIndex(const grid_map::Index &index)
             global_map_->getPosition(neighbor, pos);
             if (!global_map_->isInside(pos)) continue;
 
-            if (!global_map_->isValid(neighbor, "elevation_mean"))
+            if (std::isnan((*elevation_mean_)(neighbor.x(), neighbor.y())))
                 continue;
 
             // See updateStepAtIndex: an immature, still-noisy neighbor must
             // not be allowed to inject a spurious gradient into an
             // already-reliable center cell's fitted plane.
-            if (global_map_->at("elevation_num_measurements", neighbor) < kReliableMeasurementCount)
+            if ((*elevation_num_measurements_)(neighbor.x(), neighbor.y()) < kReliableMeasurementCount)
                 continue;
 
             double x = dx * resolution;
             double y = dy * resolution;
-            double z = global_map_->at("elevation_mean", neighbor);
+            double z = (*elevation_mean_)(neighbor.x(), neighbor.y());
 
             points.emplace_back(x, y, z);
         }
@@ -480,7 +490,7 @@ void TraversabilityMap::updateSlopeAtIndex(const grid_map::Index &index)
 
     if (points.size() < 6)
     {
-        global_map_->at("slope", index) = std::numeric_limits<float>::quiet_NaN();
+        (*slope_)(index.x(), index.y()) = std::numeric_limits<float>::quiet_NaN();
         return;
     }
 
@@ -505,29 +515,29 @@ void TraversabilityMap::updateSlopeAtIndex(const grid_map::Index &index)
 
     double slope = std::atan(gradient_norm);
 
-    global_map_->at("slope", index) = std::abs(static_cast<float>(slope));
+    (*slope_)(index.x(), index.y()) = std::abs(static_cast<float>(slope));
 }
 
 void TraversabilityMap::reconcileOccupancyWithTerrain(const grid_map::Index &index)
 {
-    if (!global_map_->isValid(index, "occupancy_probability") || global_map_->at("occupancy_probability", index) <= config_.occupancy_threshold)
+    if (std::isnan((*occupancy_probability_)(index.x(), index.y())) || (*occupancy_probability_)(index.x(), index.y()) <= config_.occupancy_threshold)
         return;
 
     // Not enough terrain samples yet to vouch either way. Leave the
     // occupancy belief alone rather than clearing it on incomplete evidence.
-    if (global_map_->at("elevation_num_measurements", index) < kReliableMeasurementCount)
+    if ((*elevation_num_measurements_)(index.x(), index.y()) < kReliableMeasurementCount)
         return;
 
-    const bool step_is_safe = global_map_->isValid(index, "step") && global_map_->at("step", index) < config_.max_step;
-    const bool slope_is_safe = global_map_->isValid(index, "slope") && global_map_->at("slope", index) < config_.max_slope;
+    const bool step_is_safe = !std::isnan((*step_)(index.x(), index.y())) && (*step_)(index.x(), index.y()) < config_.max_step;
+    const bool slope_is_safe = !std::isnan((*slope_)(index.x(), index.y())) && (*slope_)(index.x(), index.y()) < config_.max_slope;
 
     // Only clear a HIT-driven occupancy belief when the terrain shows
     // neither a discrete step nor a hazardous slope
     if (step_is_safe && slope_is_safe)
     {
-        global_map_->at("occupancy_logodds", index) = 0.0f;
-        global_map_->at("occupancy_probability", index) = 0.0f;
-        global_map_->at("inflated_occupancy", index) = 0.0f;
+        (*occupancy_logodds_)(index.x(), index.y()) = 0.0f;
+        (*occupancy_probability_)(index.x(), index.y()) = 0.0f;
+        (*inflated_occupancy_)(index.x(), index.y()) = 0.0f;
     }
 }
 
@@ -549,18 +559,18 @@ void TraversabilityMap::computeInflatedOccupancy()
     const int cols = map_size(1);
     const int num_cells = rows * cols;
 
-    grid_map::Matrix &inflated = (*global_map_)["inflated_occupancy"];
+    grid_map::Matrix &inflated = *inflated_occupancy_;
     inflated.setZero();
 
-    const grid_map::Matrix &occupancy = (*global_map_)["occupancy_probability"];
+    const grid_map::Matrix &occupancy = *occupancy_probability_;
 
     // ---- Multi-source wavefront (brushfire-style) distance transform ----
     //
     // We seed a single priority-queue-based wavefront from ALL occupied cells at
     // once and let it expand outward together. Each cell in the map is only
     // ever finalized once, and the distance assigned to it is the true
-    // Euclidean distance to the obstacle cell that reached it first, so the result 
-    // is a distance-to-nearest-obstacle field. This is the same "brushfire" idea 
+    // Euclidean distance to the obstacle cell that reached it first, so the result
+    // is a distance-to-nearest-obstacle field. This is the same "brushfire" idea
     // as ROS's costmap_2d inflation layer uses.
     //
     // Cost: every cell is enqueued/dequeued O(1) times -> O(N log N) over the
@@ -616,7 +626,6 @@ void TraversabilityMap::computeInflatedOccupancy()
         // linear falloff from there out to inflation_radius
         const float decay = (current.distance <= robot_radius) ? 1.0f : 1.0f - static_cast<float>((current.distance - robot_radius) / (inflation_radius - robot_radius));
         inflated(current.x, current.y) = std::max(inflated(current.x, current.y), decay);
-        (*global_map_)["inflated_occupancy"](current.x, current.y) = inflated(current.x, current.y);
 
         for (const auto &offset : kNeighborOffsets)
         {
@@ -644,38 +653,38 @@ void TraversabilityMap::updateCostAtIndex(const grid_map::Index &index, double &
 {
     double constraint_cost = 0.0;
     // Hard occupancy: a directly-sensed obstacle is always maximally costly.
-    if (global_map_->isValid(index, "occupancy_probability"))
+    if (!std::isnan((*occupancy_probability_)(index.x(), index.y())))
     {
-        if (global_map_->at("occupancy_probability", index) > config_.occupancy_threshold)
+        if ((*occupancy_probability_)(index.x(), index.y()) > config_.occupancy_threshold)
             constraint_cost = config_.constraint_cost;
     }
 
     // A cell's terrain (slope/step) is only trustworthy once it has
     // accumulated enough elevation measurements
-    const bool terrain_reliable = global_map_->at("elevation_num_measurements", index) > kReliableMeasurementCount;
+    const bool terrain_reliable = (*elevation_num_measurements_)(index.x(), index.y()) > kReliableMeasurementCount;
 
     float slope = 0.0f;
     float step  = 0.0f;
     float inflated_occupancy = 0.0f;
 
-    if (terrain_reliable && global_map_->isValid(index, "slope"))
+    if (terrain_reliable && !std::isnan((*slope_)(index.x(), index.y())))
     {
-        slope = global_map_->at("slope", index);
+        slope = (*slope_)(index.x(), index.y());
         if (slope > config_.max_slope)
             constraint_cost = config_.constraint_cost;
         slope = std::clamp(static_cast<float>(slope / config_.max_slope), 0.0f, 1.0f);
     }
 
-    if (terrain_reliable && global_map_->isValid(index, "step"))
+    if (terrain_reliable && !std::isnan((*step_)(index.x(), index.y())))
     {
-        step = global_map_->at("step", index);
+        step = (*step_)(index.x(), index.y());
         if (step > config_.max_step)
             constraint_cost = config_.constraint_cost;
         step = std::clamp(step / config_.max_step, 0.0, 1.0);
     }
 
-    if (global_map_->isValid(index, "inflated_occupancy"))
-        inflated_occupancy = global_map_->at("inflated_occupancy", index);
+    if (!std::isnan((*inflated_occupancy_)(index.x(), index.y())))
+        inflated_occupancy = (*inflated_occupancy_)(index.x(), index.y());
 
     const double terrain_component = terrain_reliable ? static_cast<double>(config_.slope_weight * slope + config_.step_weight * step) : config_.unknown_cost;
 
@@ -684,7 +693,7 @@ void TraversabilityMap::updateCostAtIndex(const grid_map::Index &index, double &
     // Hard constraint violations (near-vertical slope, un-traversable step,
     // or a directly-sensed obstacle) must dominate the soft, weighted cost.
     a_cost = std::max(a_cost, constraint_cost);
-    global_map_->at("cost", index) = a_cost;
+    (*cost_)(index.x(), index.y()) = a_cost;
 }
 
 }; // namespace arena_demos
