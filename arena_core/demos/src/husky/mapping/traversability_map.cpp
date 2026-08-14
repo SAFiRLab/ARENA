@@ -52,25 +52,25 @@ constexpr float MAX_L = 5.0f;
 // step/slope layers are considered statistically reliable 
 constexpr float kReliableMeasurementCount = 15.0f;
 
-// Cost assigned to the terrain (slope/step) component of a cell whose
-// elevation has not yet been reliably measured. Derived from the elevation
-// Kalman filter's steady-state variance (R=0.01, Q=1e-4 -> std ~= 4.4cm),
-// giving a converged-flat-cell noise floor around ~0.2-0.3 once normalized;
-// UNKNOWN_COST must sit clearly above that and clearly below the hard
-// max cost (4.0) so a confirmed-unsafe cell always outranks a merely-
-// unexplored one.
-constexpr double UNKNOWN_COST = 1.0;
-
 
 namespace arena_demos
 {
 
+TraversabilityMap::TraversabilityMap(const TraversabilityMapConfig &a_config)
+: global_map_(nullptr), local_map_(nullptr), robot_bb_(), config_(a_config)
+{}
+
+TraversabilityMap::TraversabilityMap(const RobotBoundingBox &a_robot_bb)
+: global_map_(nullptr), local_map_(nullptr), robot_bb_(a_robot_bb), config_()
+{}
+
 TraversabilityMap::TraversabilityMap()
-: global_map_(nullptr), local_map_(nullptr)
-{
-    robot_bb_.x_width = 1.0;
-    robot_bb_.y_width = 1.0;
-}
+: global_map_(nullptr), local_map_(nullptr), robot_bb_(), config_()
+{}
+
+TraversabilityMap::TraversabilityMap(const RobotBoundingBox &a_robot_bb, const TraversabilityMapConfig &a_config)
+: global_map_(nullptr), local_map_(nullptr), robot_bb_(a_robot_bb), config_(a_config)
+{}
 
 void TraversabilityMap::initializeMaps(const grid_map::Position &a_center)
 {
@@ -85,9 +85,9 @@ void TraversabilityMap::initializeMaps(const grid_map::Position &a_center)
     global_map_->add("occupancy_probability");
     global_map_->add("inflated_occupancy");
     global_map_->add("cost");
-    global_map_->setFrameId("world");
+    global_map_->setFrameId(config_.root_frame);
 
-    global_map_->setGeometry(grid_map::Length(50.0, 50.0), 0.3, a_center);
+    global_map_->setGeometry(grid_map::Length(config_.global_map_size_x, config_.global_map_size_y), config_.map_resolution, a_center);
     (*global_map_)["elevation_mean"].setConstant(std::numeric_limits<float>::quiet_NaN());
     (*global_map_)["elevation_variance"].setConstant(std::numeric_limits<float>::quiet_NaN());
     (*global_map_)["elevation_num_measurements"].setConstant(0.0f);
@@ -97,12 +97,12 @@ void TraversabilityMap::initializeMaps(const grid_map::Position &a_center)
     (*global_map_)["occupancy_logodds"].setZero();
     (*global_map_)["occupancy_probability"].setConstant(0.0f);
     (*global_map_)["inflated_occupancy"].setConstant(0.0f);
-    (*global_map_)["cost"].setConstant(static_cast<float>(UNKNOWN_COST));
+    (*global_map_)["cost"].setConstant(static_cast<float>(config_.unknown_cost));
 
     // ----- LOCAL MAP -----
     local_map_ = std::make_shared<grid_map::GridMap>(std::vector<std::string>{"elevation_mean"});
-    local_map_->setFrameId("world");
-    local_map_->setGeometry(grid_map::Length(30.0, 30.0), 0.3);
+    local_map_->setFrameId(config_.root_frame);
+    local_map_->setGeometry(grid_map::Length(config_.local_map_size_x, config_.local_map_size_y), config_.map_resolution);
 
     global_map_initialized_ = true;
 }
@@ -192,8 +192,8 @@ void TraversabilityMap::updateMap(const std::shared_ptr<pcl::PointCloud<pcl::Poi
         else
         {
             const bool terrain_reliable = global_map_->at("elevation_num_measurements", index) >= kReliableMeasurementCount;
-            const bool step_confirms_obstacle = global_map_->isValid(index, "step") && global_map_->at("step", index) >= 0.5f;
-            const bool slope_confirms_obstacle = global_map_->isValid(index, "slope") && global_map_->at("slope", index) >= static_cast<float>(M_PI_4);
+            const bool step_confirms_obstacle = global_map_->isValid(index, "step") && global_map_->at("step", index) >= config_.max_step;
+            const bool slope_confirms_obstacle = global_map_->isValid(index, "slope") && global_map_->at("slope", index) >= config_.max_slope;
 
             // A ground label is authoritative and should immediately override
             // noise-driven false occupancy, unless the terrain has already
@@ -510,7 +510,7 @@ void TraversabilityMap::updateSlopeAtIndex(const grid_map::Index &index)
 
 void TraversabilityMap::reconcileOccupancyWithTerrain(const grid_map::Index &index)
 {
-    if (!global_map_->isValid(index, "occupancy_probability") || global_map_->at("occupancy_probability", index) <= 0.9f)
+    if (!global_map_->isValid(index, "occupancy_probability") || global_map_->at("occupancy_probability", index) <= config_.occupancy_threshold)
         return;
 
     // Not enough terrain samples yet to vouch either way. Leave the
@@ -518,8 +518,8 @@ void TraversabilityMap::reconcileOccupancyWithTerrain(const grid_map::Index &ind
     if (global_map_->at("elevation_num_measurements", index) < kReliableMeasurementCount)
         return;
 
-    const bool step_is_safe = global_map_->isValid(index, "step") && global_map_->at("step", index) < 0.5f;
-    const bool slope_is_safe = global_map_->isValid(index, "slope") && global_map_->at("slope", index) < static_cast<float>(M_PI_4);
+    const bool step_is_safe = global_map_->isValid(index, "step") && global_map_->at("step", index) < config_.max_step;
+    const bool slope_is_safe = global_map_->isValid(index, "slope") && global_map_->at("slope", index) < config_.max_slope;
 
     // Only clear a HIT-driven occupancy belief when the terrain shows
     // neither a discrete step nor a hazardous slope
@@ -533,8 +533,7 @@ void TraversabilityMap::reconcileOccupancyWithTerrain(const grid_map::Index &ind
 
 void TraversabilityMap::computeInflatedOccupancy()
 {
-    // ---- TUNABLE PARAMETERS ----
-    constexpr float occupied_threshold = 0.9f;
+    // ---- TUNABLE PARAMETER ----
     constexpr double inflation_radius = 9.0;   // meters
 
     // Circumscribed radius of the robot's footprint: any cell within this
@@ -550,10 +549,6 @@ void TraversabilityMap::computeInflatedOccupancy()
     const int cols = map_size(1);
     const int num_cells = rows * cols;
 
-    // Must bind by reference: operator[] returns Matrix&, and binding to a
-    // local Matrix would copy it, leaving setZero() below zeroing only the
-    // copy instead of the real layer (so a cell whose obstacle has since
-    // cleared/moved would keep its old nonzero decay value forever).
     grid_map::Matrix &inflated = (*global_map_)["inflated_occupancy"];
     inflated.setZero();
 
@@ -591,7 +586,7 @@ void TraversabilityMap::computeInflatedOccupancy()
 
     for (int x = 0; x < rows; ++x)
         for (int y = 0; y < cols; ++y)
-            if (occupancy(x, y) >= occupied_threshold)
+            if (occupancy(x, y) >= config_.occupancy_threshold)
                 frontier.push({0.0f, x, y, x, y});
 
     if (frontier.empty())
@@ -619,9 +614,7 @@ void TraversabilityMap::computeInflatedOccupancy()
 
         // Flat lethal zone out to the robot's own footprint radius, then a
         // linear falloff from there out to inflation_radius
-        const float decay = (current.distance <= robot_radius)
-            ? 1.0f
-            : 1.0f - static_cast<float>((current.distance - robot_radius) / (inflation_radius - robot_radius));
+        const float decay = (current.distance <= robot_radius) ? 1.0f : 1.0f - static_cast<float>((current.distance - robot_radius) / (inflation_radius - robot_radius));
         inflated(current.x, current.y) = std::max(inflated(current.x, current.y), decay);
         (*global_map_)["inflated_occupancy"](current.x, current.y) = inflated(current.x, current.y);
 
@@ -653,8 +646,8 @@ void TraversabilityMap::updateCostAtIndex(const grid_map::Index &index, double &
     // Hard occupancy: a directly-sensed obstacle is always maximally costly.
     if (global_map_->isValid(index, "occupancy_probability"))
     {
-        if (global_map_->at("occupancy_probability", index) > 0.9f)
-            constraint_cost = 4.0f;   // Max cost
+        if (global_map_->at("occupancy_probability", index) > config_.occupancy_threshold)
+            constraint_cost = config_.constraint_cost;
     }
 
     // A cell's terrain (slope/step) is only trustworthy once it has
@@ -667,45 +660,30 @@ void TraversabilityMap::updateCostAtIndex(const grid_map::Index &index, double &
 
     if (terrain_reliable && global_map_->isValid(index, "slope"))
     {
-        // Normalize with a maximum slope of 45 degrees (pi/4 radians)
         slope = global_map_->at("slope", index);
-        if (slope > M_PI_4)
-            constraint_cost = 4.0f;   // Max cost
-        slope = std::clamp(static_cast<float>(slope / M_PI_4), 0.0f, 1.0f);
+        if (slope > config_.max_slope)
+            constraint_cost = config_.constraint_cost;
+        slope = std::clamp(static_cast<float>(slope / config_.max_slope), 0.0f, 1.0f);
     }
 
     if (terrain_reliable && global_map_->isValid(index, "step"))
     {
-        // Normalize with a maximum step of 0.5 meters
         step = global_map_->at("step", index);
-        if (step > 0.5f)
-            constraint_cost = 4.0f;   // Max cost
-        step = std::clamp(step / 0.5f, 0.0f, 1.0f);
+        if (step > config_.max_step)
+            constraint_cost = config_.constraint_cost;
+        step = std::clamp(step / config_.max_step, 0.0, 1.0);
     }
 
     if (global_map_->isValid(index, "inflated_occupancy"))
         inflated_occupancy = global_map_->at("inflated_occupancy", index);
 
-    // ---- TUNABLE WEIGHTS ----
-    const float w_slope = 1.0f;
-    const float w_step  = 1.0f;
-    const float w_occupancy = 1.0f;
+    const double terrain_component = terrain_reliable ? static_cast<double>(config_.slope_weight * slope + config_.step_weight * step) : config_.unknown_cost;
 
-    const double terrain_component = terrain_reliable
-        ? static_cast<double>(w_slope * slope + w_step * step)
-        : UNKNOWN_COST;
-
-    a_cost = terrain_component + w_occupancy * inflated_occupancy;
+    a_cost = terrain_component + config_.occupancy_weight * inflated_occupancy;
 
     // Hard constraint violations (near-vertical slope, un-traversable step,
     // or a directly-sensed obstacle) must dominate the soft, weighted cost.
     a_cost = std::max(a_cost, constraint_cost);
-
-    // updateMap() already recomputes the cost of every cell from scratch
-    // every cycle (full GridMapIterator sweep), so this must be a direct
-    // assignment, not a running max. Otherwise a one-time sensor noise
-    // spike would permanently and irreversibly inflate this cell's cost
-    // even after the underlying layers self-correct.
     global_map_->at("cost", index) = a_cost;
 }
 

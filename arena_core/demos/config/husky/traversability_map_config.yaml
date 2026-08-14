@@ -1,0 +1,28 @@
+/**:
+    ros__parameters:
+        # Robot bounding box parameters
+        robot_bounding_box:
+            x_width: 1.0
+            y_width: 1.0
+
+        # Map parameters
+        root_frame: "world"
+        map_resolution: 0.3
+        local_map_size_x: 30.0
+        local_map_size_y: 30.0
+        global_map_size_x: 50.0
+        global_map_size_y: 50.0
+
+        # Traversability constraints
+        max_slope: 0.436332313 # 25 degrees in radians
+        max_step: 0.5 # meters
+        occupancy_threshold: 0.9
+
+        # Traversability specific costs
+        constraint_cost: 4.0 # Cost for violating slope/step/occupancy constraints
+        unknown_cost: 1.0 # Cost for unknown terrain
+
+        # Traversability cost weights
+        slope_weight: 1.0
+        step_weight: 1.0
+        occupancy_weight: 1.0

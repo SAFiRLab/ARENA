@@ -65,11 +65,42 @@ struct RobotBoundingBox
 }; // struct RobotBoundingBox
 
 
+struct TraversabilityMapConfig
+{
+    std::string root_frame = "world";
+
+    // Map parameters
+    double map_resolution = 0.3; // meters
+    double local_map_size_x = 30.0; // meters
+    double local_map_size_y = 30.0; // meters
+    double global_map_size_x = 50.0; // meters
+    double global_map_size_y = 50.0; // meters
+
+    // Traversability constraints
+    double max_slope = 0.436332313; // radians (~25 degrees)
+    double max_step = 0.5; // meters
+    double occupancy_threshold = 0.9;
+
+    // Traversability specific costs
+    double constraint_cost = 4.0; // Cost for violating slope/step/occupancy constraints
+    double unknown_cost = 1.0; // Cost for unknown terrain
+
+    // Traversability cost weights
+    double slope_weight = 1.0;
+    double step_weight = 1.0;
+    double occupancy_weight = 1.0;
+
+}; // struct TraversabilityMapConfig
+
+
 class TraversabilityMap
 {
 public:
 
     TraversabilityMap();
+    TraversabilityMap(const TraversabilityMapConfig &a_config);
+    TraversabilityMap(const RobotBoundingBox &a_robot_bb, const TraversabilityMapConfig &a_config);
+    TraversabilityMap(const RobotBoundingBox &a_robot_bb);
     
     void moveLocalMap(const Eigen::Vector2d &a_pose);
     void updateMap(std::unordered_map<std::string, std::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>> &a_clouds);
@@ -99,6 +130,7 @@ private:
     std::mutex map_mutex_;
     bool global_map_initialized_ = false;
     RobotBoundingBox robot_bb_;
+    TraversabilityMapConfig config_;
 
 }; // class TraversabilityMap
 

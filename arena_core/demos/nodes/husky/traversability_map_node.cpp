@@ -21,8 +21,8 @@
 class TraversabilityMappingNode : public rclcpp::Node
 {
 public:
-    TraversabilityMappingNode()
-    : Node("traversability_map_node"), tf_buffer_(this->get_clock()), tf_listener_(tf_buffer_)
+    TraversabilityMappingNode(rclcpp::NodeOptions options = rclcpp::NodeOptions())
+    : Node("traversability_map_node", options), tf_buffer_(this->get_clock()), tf_listener_(tf_buffer_)
     {
         using std::placeholders::_1;
 
@@ -35,6 +35,29 @@ public:
         local_pub_ = this->create_publisher<grid_map_msgs::msg::GridMap>("/local_grid_map", rclcpp::QoS(1));
         global_pub_ = this->create_publisher<grid_map_msgs::msg::GridMap>("/global_grid_map", rclcpp::QoS(1).transient_local());
 
+        // Parameters
+        arena_demos::TraversabilityMapConfig config;
+        config.root_frame = this->get_parameter("root_frame").as_string();
+        config.map_resolution = this->get_parameter("map_resolution").as_double();
+        config.local_map_size_x = this->get_parameter("local_map_size_x").as_double();
+        config.local_map_size_y = this->get_parameter("local_map_size_y").as_double();
+        config.global_map_size_x = this->get_parameter("global_map_size_x").as_double();
+        config.global_map_size_y = this->get_parameter("global_map_size_y").as_double();
+        config.max_slope = this->get_parameter("max_slope").as_double();
+        config.max_step = this->get_parameter("max_step").as_double();
+        config.occupancy_threshold = this->get_parameter("occupancy_threshold").as_double();
+        config.constraint_cost = this->get_parameter("constraint_cost").as_double();
+        config.unknown_cost = this->get_parameter("unknown_cost").as_double();
+        config.slope_weight = this->get_parameter("slope_weight").as_double();
+        config.step_weight = this->get_parameter("step_weight").as_double();
+        config.occupancy_weight = this->get_parameter("occupancy_weight").as_double();
+
+        arena_demos::RobotBoundingBox robot_bb;
+        robot_bb.x_width = this->get_parameter("robot_bounding_box.x_width").as_double();
+        robot_bb.y_width = this->get_parameter("robot_bounding_box.y_width").as_double();
+
+        traversability_map_ = std::make_shared<arena_demos::TraversabilityMap>(robot_bb, config);
+
         // Slow global publishing
         global_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), std::bind(&TraversabilityMappingNode::publishGlobalMap, this));
         local_timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&TraversabilityMappingNode::publishLocalMap, this));
@@ -46,14 +69,16 @@ private:
 
     void poseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr a_msg)
     {
-        robot_position_ = {a_msg->pose.position.x, a_msg->pose.position.y};
+        robot_position_ = {a_msg->pose.position.x, a_msg->pose.position.y, a_msg->pose.position.z};
+        // Orientation from msg is in quaternion form (x, y, z, w) 
+        robot_orientation_ = {a_msg->pose.orientation.x, a_msg->pose.orientation.y, a_msg->pose.orientation.z, a_msg->pose.orientation.w};
 
-        traversability_map_.moveLocalMap(robot_position_);
+        traversability_map_->moveLocalMap(Eigen::Vector2d(robot_position_.x(), robot_position_.y()));
     }
 
     void nonGroundCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr a_msg)
     {
-        if (!traversability_map_.isMapInitialized())
+        if (!traversability_map_->isMapInitialized())
             return;
         
         sensor_msgs::msg::PointCloud2 cloud_world;
@@ -76,7 +101,7 @@ private:
 
     void groundCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr a_msg)
     {
-        if (!traversability_map_.isMapInitialized())
+        if (!traversability_map_->isMapInitialized())
             return;
 
         sensor_msgs::msg::PointCloud2 cloud_world;
@@ -126,7 +151,7 @@ private:
 
     void updateMap()
     {
-        if (!traversability_map_.isMapInitialized())
+        if (!traversability_map_->isMapInitialized())
             return;
 
         // Check if angle velocity is above threshold
@@ -162,7 +187,7 @@ private:
         clouds["ground"] = ground_cloud_;
         clouds["non_ground"] = non_ground_cloud_;
 
-        traversability_map_.updateMap(clouds);
+        traversability_map_->updateMap(clouds);
 
         // Each cloud is one independent scan observation for the log-odds
         // filter. If a fresh one isn't ready by the next tick, we must
@@ -173,10 +198,10 @@ private:
 
     void publishLocalMap()
     {
-        if (!traversability_map_.isMapInitialized())
+        if (!traversability_map_->isMapInitialized())
             return;
         
-        std::shared_ptr<grid_map::GridMap> local_map = traversability_map_.getLocalMap();
+        std::shared_ptr<grid_map::GridMap> local_map = traversability_map_->getLocalMap();
 
         if (!local_map)
             return;
@@ -192,10 +217,10 @@ private:
 
     void publishGlobalMap()
     {
-        if (!traversability_map_.isMapInitialized())
+        if (!traversability_map_->isMapInitialized())
             return;
 
-        std::shared_ptr<grid_map::GridMap> global_map = traversability_map_.getGlobalMap();
+        std::shared_ptr<grid_map::GridMap> global_map = traversability_map_->getGlobalMap();
 
         if (!global_map)
             return;
@@ -203,12 +228,14 @@ private:
         global_map->setTimestamp(this->now().nanoseconds());
 
         auto msg = grid_map::GridMapRosConverter::toMessage(*global_map);
+        msg->info.pose.position.z = robot_position_.z();  // Set the z position of the map to the robot's current z position
 
         global_pub_->publish(std::move(msg));  // ZERO COPY
     }
 
-    arena_demos::TraversabilityMap traversability_map_;
-    Eigen::Vector2d robot_position_;
+    std::shared_ptr<arena_demos::TraversabilityMap> traversability_map_;
+    Eigen::Vector3d robot_position_;
+    Eigen::Vector4d robot_orientation_;
 
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr ground_cloud_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr non_ground_cloud_sub_;
@@ -238,8 +265,9 @@ private:
 int main(int argc, char ** argv)
 {
     rclcpp::init(argc, argv);
-
-    auto node = std::make_shared<TraversabilityMappingNode>();
+    rclcpp::NodeOptions options;
+    options.allow_undeclared_parameters(true).automatically_declare_parameters_from_overrides(true);
+    auto node = std::make_shared<TraversabilityMappingNode>(options);
 
     rclcpp::spin(node);
     rclcpp::shutdown();

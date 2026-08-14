@@ -358,12 +358,12 @@ void HuskyTestNode::publishARENAPath()
                 double elevation = cap->getElevationAt(point_2d);
                 if (!std::isfinite(elevation))
                 {
-                    p.z = 0.0;
+                    p.z = current_robot_pose_.z();
                 }
                 else
                 {
-                    //p.z = elevation;
-                    p.z = 0.0;
+                    p.z = current_robot_pose_.z();
+                    //p.z = 0.0;
                 }
             }
             catch(const std::exception& e)
@@ -430,12 +430,12 @@ void HuskyTestNode::publishControlPoints()
         double elevation = cap->getElevationAt(point_2d);
         if (!std::isfinite(elevation))
         {
-            p.z = 0.0;
+            p.z = current_robot_pose_.z();
         }
         else
         {
             //p.z = elevation;
-            p.z = 0.0;
+            p.z = current_robot_pose_.z();
         }
 
         control_points_marker.points.push_back(p);
@@ -483,12 +483,12 @@ void HuskyTestNode::publishOMPLPlannerPaths()
             double elevation = cap->getElevationAt(point_2d);
             if (!std::isfinite(elevation))
             {
-                p.z = 0.0;
+                p.z = current_robot_pose_.z();
             }
             else
             {
                 //p.z = elevation;
-                p.z = 0.0;
+                p.z = current_robot_pose_.z();
             }
 
             path_marker.points.push_back(p);
@@ -586,12 +586,12 @@ void HuskyTestNode::publishSolutionSet(const pagmo::population& pop)
             double elevation = cap->getElevationAt(point_2d);
             if (!std::isfinite(elevation))
             {
-                a_point.z = 0.0;
+                a_point.z = current_robot_pose_.z();
             }
             else
             {
                 //a_point.z = elevation;
-                a_point.z = 0.0;
+                a_point.z = current_robot_pose_.z();
             }
             pose_marker.points.push_back(a_point);
         }

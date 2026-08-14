@@ -37,6 +37,7 @@ endif()
 if (ENABLE_ROS2)
     install(DIRECTORY
     demos/launch
+    demos/config
     DESTINATION share/${PROJECT_NAME}/
     )
 endif()

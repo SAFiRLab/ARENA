@@ -3,6 +3,8 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
+from launch.substitutions import PathJoinSubstitution
 
 
 def launch_setup(context, *args, **kwargs):
@@ -14,7 +16,8 @@ def launch_setup(context, *args, **kwargs):
             executable='traversability_map_node',
             name='traversability_map_node',
             parameters=[
-                '/home/dev_ws/src/arena_core/demos/config/husky/grid_map_filters_config.yaml'
+                PathJoinSubstitution([FindPackageShare('arena_core'), 'config/husky/grid_map_filters_config.yaml']),
+                PathJoinSubstitution([FindPackageShare('arena_core'), 'config/husky/traversability_map_config.yaml'])
             ],
             remappings=[
                 ('/pose', '/groundTruth/poseStamped'),
@@ -28,7 +31,7 @@ def launch_setup(context, *args, **kwargs):
             executable='husky_test_node',
             name='husky_test_node',
             namespace='husky_test_node',
-            parameters=['/home/dev_ws/src/arena_core/demos/config/husky/husky_problem_params.yaml',
+            parameters=[PathJoinSubstitution([FindPackageShare('arena_core'), 'config/husky/husky_problem_params.yaml']),
                         {'use_sim_time': LaunchConfiguration('use_sim_time')}],
             remappings=[
                 ('/pose', '/groundTruth/poseStamped')
@@ -41,7 +44,8 @@ def launch_setup(context, *args, **kwargs):
             executable='traversability_map_node',
             name='traversability_map_node',
             parameters=[
-                '/home/dev_ws/src/arena_core/demos/config/husky/grid_map_filters_config.yaml'
+                PathJoinSubstitution([FindPackageShare('arena_core'), 'config/husky/grid_map_filters_config.yaml']),
+                PathJoinSubstitution([FindPackageShare('arena_core'), 'config/husky/traversability_map_config.yaml'])
             ],
             remappings=[
                 ('/pose', '/cartography_pkg/ekf/odometry_filtered'),
@@ -55,7 +59,7 @@ def launch_setup(context, *args, **kwargs):
             executable='husky_test_node',
             name='husky_test_node',
             namespace='husky_test_node',
-            parameters=['/home/dev_ws/src/arena_core/demos/config/husky/husky_problem_params.yaml',
+            parameters=[PathJoinSubstitution([FindPackageShare('arena_core'), 'config/husky/husky_problem_params.yaml']),
                         {'use_sim_time': LaunchConfiguration('use_sim_time')}],
             remappings=[
                 ('/odometry', '/cartography_pkg/ekf/odometry_filtered'),
