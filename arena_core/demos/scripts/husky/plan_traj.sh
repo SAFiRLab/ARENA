@@ -3,17 +3,17 @@
 GLOBAL_FRAME_ID=world
 
 
-ros2 topic pub /husky_test_node/planning_activation std_msgs/msg/Bool "data: true" --once
+ros2 topic pub /planning_activation std_msgs/msg/Bool "data: true" --once
 
 sleep 1
 
-ros2 topic pub /husky_test_node/goal_pose geometry_msgs/msg/PointStamped "{
+ros2 topic pub /goal_pose geometry_msgs/msg/PointStamped "{
   header: {
     frame_id: \"$GLOBAL_FRAME_ID\"
   },
   point: {
-    x: -12.38,
-    y: -160.44,
-    z: 0.2
+    x: 1020.0,
+    y: -650.0,
+    z: 7.0
   }
 }" --once

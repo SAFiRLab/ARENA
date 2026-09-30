@@ -136,7 +136,7 @@ private:
             double dt = (current_stamp - prev_imu_stamp_).seconds();
             if (dt > 0.0)
             {
-                double angular_acceleration_threshold = 5.0; // rad/s^2, TODO: tune against a real stop/start suspension nod
+                double angular_acceleration_threshold = 15.0; // rad/s^2, TODO: tune against a real stop/start suspension nod
                 double angular_acceleration = (current_angular_velocity - prev_angular_velocity_).norm() / dt;
 
                 if (angular_acceleration > angular_acceleration_threshold)
@@ -157,7 +157,7 @@ private:
         // Check if angle velocity is above threshold
         if (imu_data_)
         {
-            double angular_velocity_threshold = 0.5; // rad/s
+            double angular_velocity_threshold = 5.0; // rad/s
             double angular_velocity_magnitude = std::sqrt(std::pow(imu_data_->angular_velocity.x, 2) +
                                                         std::pow(imu_data_->angular_velocity.y, 2) +
                                                         std::pow(imu_data_->angular_velocity.z, 2));
@@ -175,7 +175,7 @@ private:
         // caught separately in imuCallback() as an angular-velocity delta.
         if (motion_transient_detected_)
         {
-            RCLCPP_WARN(this->get_logger(), "Detected a sharp angular-velocity transient (likely suspension-induced pointcloud skew) -- skipping this update.");
+            RCLCPP_WARN(this->get_logger(), "Detected a sharp angular-velocity transient (likely suspension-induced pointcloud skew), skipping this update.");
             motion_transient_detected_ = false;
             return; // Skip updating the map
         }

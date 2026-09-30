@@ -839,6 +839,13 @@ pagmo::vector_double HuskyTestNode::huskyFitness(const pagmo::vector_double& dv)
         husky_output_.fitness_array_[1] = std::numeric_limits<double>::max();
     }
 
+    if (husky_output_.fitness_array_[1] >= 4.0)
+    {
+        // Reject the solution if it's not safe enough
+        husky_output_.fitness_array_[0] = std::numeric_limits<double>::max();
+        husky_output_.fitness_array_[1] = std::numeric_limits<double>::max();
+    }
+
     return husky_output_.fitness_array_;
 }
 
@@ -991,7 +998,7 @@ bool HuskyTestNode::isCurrentPathSafe() const
         return false; // Path size mismatch
     }
 
-    // Check if the path is safe by checking for collisions with the octree
+    // Check if the path is safe by checking for collisions
     for (int i = 0; i < arena_path_->cols() - 1; ++i)
     {
         Eigen::Vector2d start = arena_path_->col(i).head(2);
