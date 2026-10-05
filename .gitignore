@@ -12,3 +12,19 @@ _deps
 CMakeUserPresets.json
 
 .vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+

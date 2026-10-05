@@ -1,0 +1,9 @@
+Variation du nombre de points sur les nurbs par solution
+
+- Allant de 11 à 251
+- Avec des bons de 2
+- Avec 10 itérations par bon
+- Coefficients:
+    - Time = 0.1
+    - Safety = 0.1
+    - Energy = 0.8

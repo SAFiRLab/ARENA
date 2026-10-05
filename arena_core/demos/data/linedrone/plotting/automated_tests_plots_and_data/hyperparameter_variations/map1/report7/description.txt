@@ -1,0 +1,9 @@
+Variation du nombre de solution par génération
+
+- Allant de 8 à 208
+- Avec des bons de 4
+- Avec 10 itérations par bon
+- Coefficients:
+    - Time = 0.1
+    - Safety = 0.1
+    - Energy = 0.8

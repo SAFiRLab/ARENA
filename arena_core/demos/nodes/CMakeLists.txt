@@ -29,8 +29,33 @@ ament_target_dependencies(linedrone_test_node
     tf2
     std_msgs
     geometry_msgs
+    nav_msgs
     octomap_msgs
     grid_map_core
+    arena_msgs
+)
+
+add_executable(testbench_node linedrone/testbench_nodes/testbench_node.cpp)
+target_link_libraries(testbench_node ${OCTOMAP_LIBRARIES})
+ament_target_dependencies(testbench_node 
+    rclcpp 
+    visualization_msgs
+    std_msgs
+    geometry_msgs
+    nav_msgs
+    octomap_msgs
+    arena_msgs
+)
+
+add_executable(testbench_utilities_publisher_node
+    linedrone/testbench_nodes/testbench_utilities_publisher_node.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../data/linedrone/src/testbench_config.cpp
+)
+target_link_libraries(testbench_utilities_publisher_node ${OCTOMAP_LIBRARIES} yaml-cpp)
+ament_target_dependencies(testbench_utilities_publisher_node 
+    rclcpp 
+    nav_msgs
+    octomap_msgs
 )
 
 add_executable(husky_test_node husky/husky_test_node.cpp ${ARENA_DEMOS_HUSKY_SRCS})
@@ -71,6 +96,8 @@ install(TARGETS
   costmap_3D_node
   nurbs_test_node
   linedrone_test_node
+  testbench_node
+  testbench_utilities_publisher_node
   husky_test_node
   traversability_map_node
   DESTINATION lib/${PROJECT_NAME}

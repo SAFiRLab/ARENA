@@ -18,6 +18,8 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <depend>geometry_msgs</depend>
+  <depend>visualization_msgs</depend>
 
   <member_of_group>rosidl_interface_packages</member_of_group>
 

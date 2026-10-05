@@ -1,0 +1,22 @@
+# Testbench configuration of ressources/saved_octomaps/map_test_3.bt
+# Both points have been checked to be inside the map and at least 6 m away from the obstacles.
+
+# Start pose of the drone, published by testbench_utilities_publisher_node on /testbench/drone/odom
+# (same as the start state used by linedrone_test_node)
+drone:
+  position:
+    x: 95.367
+    y: 15.637
+    z: 6.376
+  orientation:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    w: 1.0
+
+# Goal sent to the planner by testbench_node (same as scripts/linedrone/send_CL_map_planning_info.sh)
+planning_goal:
+  position:
+    x: 59.367
+    y: -26.573
+    z: 44.997

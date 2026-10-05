@@ -1,0 +1,24 @@
+Tests d'évaluation de consommation de puissance électrique du drone dans différentes directions:
+
+Unit vectors:
+[[0.000000, 0.000000, 1.000000],
+[-0.000000, -0.000000, -1.000000],
+[0.000000, 0.707107, 0.707107],
+[-0.000000, -0.707107, -0.707107],
+[0.000000, 1.000000, 0.000000],
+[-0.000000, -1.000000, -0.000000],
+[0.500000, 0.500000, 0.707107],
+[-0.500000, -0.500000, -0.707107],
+[0.707107, 0.000000, 0.707107],
+[-0.707107, -0.000000, -0.707107],
+[0.707107, 0.707107, 0.000000],
+[-0.707107, -0.707107, -0.000000],
+[1.000000, 0.000000, 0.000000],
+[-1.000000, -0.000000, -0.000000]]
+
+Temps de commande de vitesse = 8.0 secondes
+Nombre de tests = 14 tests
+Norme de la commande de vitesse = 2 m/secondes
+
+Tests effectués le 
+À peu près pas de vent cette journée 13 novembre 2024

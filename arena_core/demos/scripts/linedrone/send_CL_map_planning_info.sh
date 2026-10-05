@@ -1,5 +1,5 @@
+#!/bin/bash
 ros2 topic pub /linedrone_test_node/planning_activation std_msgs/msg/Bool "data: true" --once
-
 
 ros2 topic pub /linedrone_test_node/goal_pose geometry_msgs/msg/PointStamped "{
   header: {

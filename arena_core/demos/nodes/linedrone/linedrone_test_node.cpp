@@ -36,8 +36,10 @@
 #include "visualization_msgs/msg/marker_array.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "nav_msgs/msg/path.hpp"
 #include "octomap_msgs/msg/octomap.hpp"
 #include "octomap_msgs/conversions.h"
+#include "arena_msgs/msg/optimizer_path_info.hpp"
 
 // Local
 #include "arena_core/math/nurbs.h"
@@ -54,6 +56,7 @@
 #include <Eigen/Dense>
 // Pagmo
 #include <pagmo/algorithms/nsga2.hpp>
+#include <pagmo/utils/multi_objective.hpp>
 // OMPL
 #include <ompl/geometric/planners/rrt/RRT.h>
 #include <ompl/base/spaces/RealVectorStateSpace.h>
@@ -141,6 +144,25 @@ private:
      */
     void ARENAOptimization();
 
+    /** @brief Reads the optimization hyperparameters that can be changed between plannings.
+     * 
+     * This function updates the population size and the NURBS sample size from the ROS parameters.
+     */
+    void updateOptimizationParameters();
+
+    /** @brief Publishes the report of a planning attempt and notifies that the attempt is finished.
+     * 
+     * Every planning attempt is reported, feasible or not, so that the testbench can evaluate the feasibility rate.
+     * 
+     * @param feasible_fitness The fitness of the solutions respecting the constraints at the end of the optimization.
+     * @param chosen_idx The index of the chosen solution in feasible_fitness, or -1 if no feasible solution has been found.
+     */
+    void publishPlanningInfos(const std::vector<pagmo::vector_double>& feasible_fitness, int chosen_idx);
+
+    /** @brief Publishes the report of a planning attempt that didn't find any feasible solution.
+     */
+    void publishInfeasiblePlanning() { publishPlanningInfos({}, -1); }
+
     // ROS Timers
     rclcpp::TimerBase::SharedPtr run_timer_;
     rclcpp::TimerBase::SharedPtr octomap_timer_;
@@ -169,6 +191,8 @@ private:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr arena_path_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr ompl_planner_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr solution_set_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr path_planning_finished_pub_;
+    rclcpp::Publisher<arena_msgs::msg::OptimizerPathInfo>::SharedPtr nurbs_infos_pub_;
 
     // ROS Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr goal_pose_sub_;
@@ -211,6 +235,8 @@ private:
     std::shared_ptr<Eigen::MatrixXd> arena_path_;
     bool planning_activated_ = false;
     bool path_planned_ = false;
+    bool octree_received_ = false;
+    bool color_octree_received_ = false;
     GoalStatus planning_goal_;
 
     // For the OMPL planner
@@ -221,6 +247,10 @@ private:
 
     // For optimization
     size_t population_size_ = 0;
+    std::chrono::steady_clock::time_point planning_start_time_;
+    double initialization_time_ = 0.0; // s
+    double optimization_time_ = 0.0;   // s
+    int nb_of_control_points_ = 0;
     
     // ROS namespace
     std::string ros_namespace_ = "linedrone_test_node";
@@ -256,7 +286,10 @@ void LinedroneTestNode::inflatedOctomapCallback(const octomap_msgs::msg::Octomap
 
     // Set the octree in the costmap mapping
     if (costmap_mapping_)
+    {
         costmap_mapping_->setOctree(octree);
+        octree_received_ = true;
+    }
 }
 
 void LinedroneTestNode::colorOctreeCallback(const octomap_msgs::msg::Octomap::SharedPtr msg)
@@ -271,7 +304,10 @@ void LinedroneTestNode::colorOctreeCallback(const octomap_msgs::msg::Octomap::Sh
 
     // Set the color octree in the costmap mapping
     if (costmap_mapping_)
+    {
         costmap_mapping_->setColorOctree(color_octree);
+        color_octree_received_ = true;
+    }
 }
 
 
@@ -599,6 +635,12 @@ void LinedroneTestNode::initializerPlanning()
         return;
     }
 
+    planning_start_time_ = std::chrono::steady_clock::now();
+    initialization_time_ = 0.0;
+    optimization_time_ = 0.0;
+    nb_of_control_points_ = 0;
+    updateOptimizationParameters();
+
     path_planned_ = false;
     initial_paths_.clear();
 
@@ -666,6 +708,8 @@ void LinedroneTestNode::initializerPlanning()
         {
             RCLCPP_WARN(get_logger(), "Too many failed planning attempts during initialization. Stopping the planning process.");
             planning_activated_ = false;
+            initialization_time_ = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
+            publishInfeasiblePlanning();
             return;
         }
     }
@@ -673,6 +717,7 @@ void LinedroneTestNode::initializerPlanning()
     // Stop timer for initialization process
     auto end_time = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    initialization_time_ = std::chrono::duration<double>(end_time - start_time).count();
     RCLCPP_INFO(get_logger(), "OMPL Planner initialized in %ld milliseconds with %zu paths generated.", duration, initial_paths_.size());
 
     // Publish the initial paths
@@ -736,6 +781,7 @@ void LinedroneTestNode::ARENAOptimization()
 
     if (nb_of_control_points < nurbs_->getDegree() + 1)
         nb_of_control_points = nurbs_->getDegree() + 1;
+    nb_of_control_points_ = nb_of_control_points;
 
     // Make sure all initial paths have the same number of control points
     for (size_t i = 0; i < initial_paths_.size(); ++i)
@@ -753,6 +799,7 @@ void LinedroneTestNode::ARENAOptimization()
         if (path.hasNaN() || path.array().isInf().any())
         {
             RCLCPP_ERROR(get_logger(), "ARENAOptimization => Initial path contains NaN or Inf values. Optimization cannot proceed.");
+            publishInfeasiblePlanning();
             return;
         }
     }
@@ -775,7 +822,7 @@ void LinedroneTestNode::ARENAOptimization()
 
     int nb_of_generations = this->get_parameter("optimization.NSGA-II.generations").as_int();
     std::function<void(const pagmo::population&)> show_set_callback = std::bind(&LinedroneTestNode::publishSolutionSet, this, std::placeholders::_1);
-    pagmo::algorithm nsga2{pagmo::nsga2(nb_of_generations, 0.95, 10.0, 0.01, 50.0, pagmo::random_device::next(), &show_set_callback)};
+    pagmo::algorithm nsga2{pagmo::nsga2(nb_of_generations, 0.95, 10.0, 0.01, 50.0, pagmo::random_device::next(), nullptr)};
     pagmo::vector_double adaptive_matrix = pagmo::vector_double(prob_linedrone.get_nf(), 0.0);
     nsga2.set_adaptive_matrix(adaptive_matrix);
 
@@ -799,14 +846,12 @@ void LinedroneTestNode::ARENAOptimization()
         pop_linedrone.push_back(dv, fitness);
     }
 
-    // Make sure we're up to date with sample size
-    linedrone_config.base_config.sample_size = this->get_parameter("optimization.sample_size").as_int();
-
     pop_linedrone = nsga2.evolve(pop_linedrone);
 
     // End timer for the optimization process
     auto end_time = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    optimization_time_ = std::chrono::duration<double>(end_time - start_time).count();
     RCLCPP_INFO(get_logger(), "ARENAOptimization => Optimization completed in %ld milliseconds.", duration);
 
     // Filter trajectories that doesn't respect the constraints
@@ -816,6 +861,18 @@ void LinedroneTestNode::ARENAOptimization()
         pagmo::vector_double fitness = pop_linedrone.get_f()[i];
         if (fitness[0] == std::numeric_limits<double>::max() || fitness[1] == std::numeric_limits<double>::max() || fitness[2] == std::numeric_limits<double>::max())
             to_remove.push_back(i);
+    }
+
+    if (to_remove.size() >= pop_linedrone.size())
+    {
+        RCLCPP_ERROR(get_logger(), "ARENAOptimization => No valid solution found.");
+        delete[] x_bounds;
+        delete[] y_bounds;
+        delete[] z_bounds;
+        planning_activated_ = false;
+        planning_goal_.goal_sent_ = false;
+        publishInfeasiblePlanning();
+        return;
     }
 
     pagmo::population pop_linedrone_filtered(prob_linedrone, population_size_ - to_remove.size());
@@ -852,6 +909,106 @@ void LinedroneTestNode::ARENAOptimization()
     path_planned_ = true;
     planning_activated_ = false;
     planning_goal_.goal_sent_ = false;
+
+    publishPlanningInfos(pop_linedrone_filtered.get_f(), best_idx);
+}
+
+void LinedroneTestNode::updateOptimizationParameters()
+{
+    // Distance between the RRT nodes of the initialization
+    if (ompl_planner_ && ompl_planner_->getInitializer()->planner_)
+        ompl_planner_->getInitializer()->planner_->as<ompl::geometric::RRT>()->setRange(this->get_parameter("optimization.initialization.rrt_range").as_double());
+
+    population_size_ = this->get_parameter("optimization.NSGA-II.population_size").as_int();
+    // Make sure the population size is divisible by 4
+    if (population_size_ % 4 != 0)
+        population_size_ += 4 - (population_size_ % 4);
+
+    unsigned int sample_size = this->get_parameter("optimization.sample_size").as_int();
+    if (sample_size == linedrone_config.base_config.sample_size && nurbs_ && nurbs_->getSampleSize() == static_cast<int>(sample_size))
+        return;
+
+    linedrone_config.base_config.sample_size = sample_size;
+    if (nurbs_)
+        nurbs_->setSampleSize(sample_size);
+
+    // The analyzer keeps its own copy of the configuration
+    linedrone_nurbs_analyzer_ = std::make_shared<arena_demos::LinedroneNurbsAnalyzer>(costmap_mapping_,
+                                                                                      linedrone_config,
+                                                                                      std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>{});
+}
+
+void LinedroneTestNode::publishPlanningInfos(const std::vector<pagmo::vector_double>& feasible_fitness, int chosen_idx)
+{
+    const bool feasible = chosen_idx >= 0 && chosen_idx < static_cast<int>(feasible_fitness.size());
+    const double max_cost = std::numeric_limits<double>::max();
+
+    arena_msgs::msg::OptimizerPathInfo infos_msg;
+    infos_msg.feasible = feasible;
+    infos_msg.path.header.frame_id = "map";
+    infos_msg.path.header.stamp = this->now();
+
+    if (feasible && arena_path_)
+    {
+        for (int i = 0; i < arena_path_->cols(); ++i)
+        {
+            geometry_msgs::msg::PoseStamped pose;
+            pose.header = infos_msg.path.header;
+            pose.pose.position.x = (*arena_path_)(0, i);
+            pose.pose.position.y = (*arena_path_)(1, i);
+            pose.pose.position.z = (*arena_path_)(2, i);
+            pose.pose.orientation.w = 1.0;
+            infos_msg.path.poses.push_back(pose);
+            infos_msg.velocities.push_back((*arena_path_)(3, i));
+        }
+    }
+
+    infos_msg.planning_time = std::chrono::duration<double>(std::chrono::steady_clock::now() - planning_start_time_).count();
+    infos_msg.initialization_time = initialization_time_;
+    infos_msg.optimization_time = optimization_time_;
+    infos_msg.nb_of_control_points = nb_of_control_points_;
+    infos_msg.nb_of_generations = this->get_parameter("optimization.NSGA-II.generations").as_int();
+    infos_msg.population_size = population_size_;
+    infos_msg.nurbs_sample_size = linedrone_config.base_config.sample_size;
+    infos_msg.rrt_range = this->get_parameter("optimization.initialization.rrt_range").as_double();
+
+    // Best value reached for every objective by the feasible solutions
+    infos_msg.best_time_cost = max_cost;
+    infos_msg.best_security_cost = max_cost;
+    infos_msg.best_energy_cost = max_cost;
+    for (const auto& fitness : feasible_fitness)
+    {
+        infos_msg.best_time_cost = std::min(infos_msg.best_time_cost, fitness[0]);
+        infos_msg.best_security_cost = std::min(infos_msg.best_security_cost, fitness[1]);
+        infos_msg.best_energy_cost = std::min(infos_msg.best_energy_cost, fitness[2]);
+    }
+
+    infos_msg.chosen_time_cost = feasible ? feasible_fitness[chosen_idx][0] : max_cost;
+    infos_msg.chosen_security_cost = feasible ? feasible_fitness[chosen_idx][1] : max_cost;
+    infos_msg.chosen_energy_cost = feasible ? feasible_fitness[chosen_idx][2] : max_cost;
+
+    infos_msg.time_coefficient = this->get_parameter("optimization.adaptive_costs_weights.time").as_double();
+    infos_msg.security_coefficient = this->get_parameter("optimization.adaptive_costs_weights.safety").as_double();
+    infos_msg.energy_coefficient = this->get_parameter("optimization.adaptive_costs_weights.energy").as_double();
+
+    // Pareto front approximation: non-dominated feasible solutions of the final population
+    if (feasible)
+    {
+        std::vector<pagmo::pop_size_t> first_front = std::get<0>(pagmo::fast_non_dominated_sorting(feasible_fitness))[0];
+        for (pagmo::pop_size_t idx : first_front)
+        {
+            infos_msg.pareto_front_time_costs.push_back(feasible_fitness[idx][0]);
+            infos_msg.pareto_front_security_costs.push_back(feasible_fitness[idx][1]);
+            infos_msg.pareto_front_energy_costs.push_back(feasible_fitness[idx][2]);
+        }
+    }
+
+    nurbs_infos_pub_->publish(infos_msg);
+
+    // Notify that the planning attempt is finished, its success is given by infos_msg.feasible
+    std_msgs::msg::Bool finished_msg;
+    finished_msg.data = true;
+    path_planning_finished_pub_->publish(finished_msg);
 }
 
 bool LinedroneTestNode::isCurrentPathSafe() const
@@ -899,6 +1056,12 @@ void LinedroneTestNode::run()
         return;
     }
 
+    // Wait for both maps before planning, the planning request is kept until then.
+    // The inflated octomap is used for collision checking and the SDF octomap for the safety cost,
+    // planning without the latter gives NaN safety costs that crash NSGA-II.
+    if (!octree_received_ || !color_octree_received_)
+        return;
+
     // Perform the main logic of the node
     if ((planning_activated_ && planning_goal_.goal_sent_) || !isCurrentPathSafe())
         initializerPlanning();
@@ -919,16 +1082,14 @@ LinedroneTestNode::LinedroneTestNode(rclcpp::NodeOptions options)
     if (ros_namespace_ != "/" && ros_namespace_.back() != '/')
         ros_namespace_ += "/";
 
+    path_planning_finished_pub_ = this->create_publisher<std_msgs::msg::Bool>(ros_namespace_ + "path_planning_finished", 10);
+    nurbs_infos_pub_ = this->create_publisher<arena_msgs::msg::OptimizerPathInfo>(ros_namespace_ + "nurbs_infos", 10);
+
     // ROS Subscription Initialization
     goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(ros_namespace_ + "goal_pose", 10, std::bind(&LinedroneTestNode::goalPoseCallback, this, std::placeholders::_1));
     planning_activation_sub_ = this->create_subscription<std_msgs::msg::Bool>(ros_namespace_ + "planning_activation", 10, std::bind(&LinedroneTestNode::planningActivationCallback, this, std::placeholders::_1));
     inflated_octomap_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/navigation/inflated_octomap/full", 10, std::bind(&LinedroneTestNode::inflatedOctomapCallback, this, std::placeholders::_1));
     color_octomap_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/navigation/sdf_octomap/full", 10, std::bind(&LinedroneTestNode::colorOctreeCallback, this, std::placeholders::_1));
-
-    population_size_ = this->get_parameter("optimization.NSGA-II.population_size").as_int();
-    // Make sure the population size is divisible by 4
-    if (population_size_ % 4 != 0)
-        population_size_ += 4 - (population_size_ % 4);
 
     // Define the nurbs_analyzer configurations with ros parameters
     linedrone_config.robot_mass_ = this->get_parameter("robot.mass").as_double(); // kg
@@ -962,8 +1123,9 @@ LinedroneTestNode::LinedroneTestNode(rclcpp::NodeOptions options)
     ompl_planner_->getInitializer()->optimization_objective_ = nullptr;
 
     // Initialize the NURBS API
-    linedrone_config.base_config.sample_size = this->get_parameter("optimization.sample_size").as_int();
+    // The sample size from the parameters is applied by updateOptimizationParameters() so the analyzer gets it too
     nurbs_ = std::make_shared<arena_core::Nurbs<4>>(std::vector<arena_core::ControlPoint<double, 4>>(), linedrone_config.base_config.sample_size);
+    updateOptimizationParameters();
 
     // ROS Timer Initialization
     // Timer for the main loop at 50 Hz

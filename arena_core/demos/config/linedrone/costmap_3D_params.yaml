@@ -1,0 +1,10 @@
+costmap_3D_node:
+  ros__parameters:
+    navigation:
+      3d:
+        inflation_radius: 1.0               # Inflation radius for the costmap in meters
+        obstacle_influence_distance:
+          min: 2.0                         # Minimum influence distance of obstacles in meters
+          max: 9.0                         # Maximum influence distance of obstacles in meters+
+    saved_map:
+      bt_file: "/home/dev_ws/src/arena_core/demos/ressources/saved_octomaps/map_test_3.bt"

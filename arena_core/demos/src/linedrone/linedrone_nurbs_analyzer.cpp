@@ -34,6 +34,7 @@
 
 // System
 #include <vector>
+#include <limits>
 
 
 namespace arena_demos
@@ -118,8 +119,8 @@ void LinedroneNurbsAnalyzer::evalEnergyCost(const Eigen::Vector3d& a_point_i_m_1
 
     // ------------- Transient regime ------------- //
     const double mass_half = 0.5 * linedrone_config.robot_mass_;
-    const Eigen::Vector3d velocity_diff = velocity_i_m_1_vector.cwiseAbs2() - velocity_i_vector.cwiseAbs2();
-    double transient_energy = (mass_half * velocity_diff).norm();
+    const double velocity_diff = Eigen::numext::abs(velocity_i_vector.squaredNorm() - velocity_i_m_1_vector.squaredNorm());
+    double transient_energy = mass_half * velocity_diff;
     // ----------------------------------------- //
 
     // ------------- Steady regime ------------- //
@@ -293,7 +294,12 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
     // Set the output values
     a_output.fitness_array_[0] = linedrone_output_.time_output_;
 
-    if (linedrone_output_.total_insertion_cost_ > 0.0)
+    if (linedrone_output_.nb_of_collision_checks_ == 0)
+    {
+        // The safety cost can't be evaluated without the SDF octomap, reject the solution instead of returning NaN
+        a_output.fitness_array_[1] = std::numeric_limits<double>::max();
+    }
+    else if (linedrone_output_.total_insertion_cost_ > 0.0)
     {
         a_output.fitness_array_[1] = ((linedrone_output_.total_collision_cost_ / linedrone_output_.nb_of_collision_checks_) + linedrone_output_.max_collision_cost_) + 
         ((linedrone_output_.total_insertion_cost_ / linedrone_output_.nb_of_insertion_checks_) + linedrone_output_.max_insertion_cost_);
