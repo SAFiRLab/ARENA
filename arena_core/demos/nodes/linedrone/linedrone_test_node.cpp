@@ -119,6 +119,12 @@ private:
      */
     bool isCurrentPathSafe() const;
 
+    /** @brief True if no segment of the path crosses an occupied voxel of the inflated octomap.
+     * Ray tracing between every pair of consecutive samples, the optimizer only checks the samples themselves.
+     * @param path Samples of the trajectory (rows x, y, z, ...).
+     */
+    bool isPathSafe(const Eigen::MatrixXd& path) const;
+
     /******************* User-Defined methods *******************/
     /** @brief Converts a pagmo vector_double to a vector of ControlPoint objects.
      * 
@@ -157,11 +163,11 @@ private:
      * @param feasible_fitness The fitness of the solutions respecting the constraints at the end of the optimization.
      * @param chosen_idx The index of the chosen solution in feasible_fitness, or -1 if no feasible solution has been found.
      */
-    void publishPlanningInfos(const std::vector<pagmo::vector_double>& feasible_fitness, int chosen_idx);
+    void publishPlanningInfos(const std::vector<pagmo::vector_double>& feasible_fitness, const std::vector<bool>& safe, int chosen_idx);
 
     /** @brief Publishes the report of a planning attempt that didn't find any feasible solution.
      */
-    void publishInfeasiblePlanning() { publishPlanningInfos({}, -1); }
+    void publishInfeasiblePlanning() { publishPlanningInfos({}, {}, -1); }
 
     // ROS Timers
     rclcpp::TimerBase::SharedPtr run_timer_;
@@ -196,6 +202,7 @@ private:
 
     // ROS Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr goal_pose_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr drone_pose_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr planning_activation_sub_;
     rclcpp::Subscription<octomap_msgs::msg::Octomap>::SharedPtr inflated_octomap_sub_;
     rclcpp::Subscription<octomap_msgs::msg::Octomap>::SharedPtr color_octomap_sub_;
@@ -206,6 +213,12 @@ private:
      * @param msg The message containing the goal pose.
      */
     void goalPoseCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg);
+
+    /** @brief Callback for the drone pose subscription.
+     * This function is called when a new drone position is received. It is used as the start of the next planning.
+     * @param msg The message containing the drone position.
+     */
+    void dronePoseCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg);
 
     /** @brief Callback for the planning activation subscription.
      * This function is called when a planning activation message is received.
@@ -243,6 +256,7 @@ private:
     std::shared_ptr<arena_core::OMPLPlanner> ompl_planner_;
     std::vector<Eigen::MatrixXd> initial_paths_;
     Eigen::Vector3d start_point_;
+    Eigen::Vector3d drone_position_ = Eigen::Vector3d(95.367, 15.637, 6.376); // Start of the planning until a drone pose is received
     Eigen::Vector3d goal_point_;
 
     // For optimization
@@ -268,10 +282,20 @@ void LinedroneTestNode::goalPoseCallback(const geometry_msgs::msg::PointStamped:
     goal_point_ = planning_goal_.goal_;
 }
 
+void LinedroneTestNode::dronePoseCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
+{
+    drone_position_ = Eigen::Vector3d(msg->point.x, msg->point.y, msg->point.z);
+}
+
 void LinedroneTestNode::planningActivationCallback(const std_msgs::msg::Bool::SharedPtr msg)
 {
     planning_activated_ = msg->data;
-    planning_goal_.goal_sent_ = false;
+
+    // Only a deactivation cancels the goal. The goal and the activation can be processed in any order when they
+    // are received while the planner is busy (the executor handles the queued messages topic by topic), resetting the
+    // goal on activation would then lose it and the planner would wait forever.
+    if (!planning_activated_)
+        planning_goal_.goal_sent_ = false;
 }
 
 void LinedroneTestNode::inflatedOctomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg)
@@ -559,23 +583,25 @@ void LinedroneTestNode::publishSolutionSet(const pagmo::population& pop)
 std::vector<arena_core::ControlPoint<double, 4>> LinedroneTestNode::pagmoDVToControlPoints(const pagmo::vector_double& dv) const
 {
     std::vector<arena_core::ControlPoint<double, 4>> control_points;
+    // The constructor is ControlPoint(values, id, weight): the id must be given for the weight to be used
+    unsigned int next_id = 0;
 
     // Push first control point
     Eigen::VectorXd start(4);
     start << start_point_(0), start_point_(1), start_point_(2), 0.0; // Assuming the 4th dimension is velocity
-    control_points.push_back(arena_core::ControlPoint<double, 4>(start, dv[0]));
+    control_points.push_back(arena_core::ControlPoint<double, 4>(start, next_id++, dv[0]));
 
     for (int i = 1; i < dv.size() - 1; i += 5)
     {
         Eigen::VectorXd cp(4);
         cp << dv[i], dv[i + 1], dv[i + 2], dv[i + 3]; // Assuming the 4th dimension is velocity
-        control_points.push_back(arena_core::ControlPoint<double, 4>(cp, dv[i + 4]));
+        control_points.push_back(arena_core::ControlPoint<double, 4>(cp, next_id++, dv[i + 4]));
     }
 
     // Push the last control point
     Eigen::VectorXd end(4);
     end << goal_point_(0), goal_point_(1), goal_point_(2), 0.0; // Assuming the 4th dimension is velocity
-    control_points.push_back(arena_core::ControlPoint<double, 4>(end, dv[dv.size() - 1]));
+    control_points.push_back(arena_core::ControlPoint<double, 4>(end, next_id, dv[dv.size() - 1]));
 
     return control_points;
 }
@@ -666,9 +692,12 @@ void LinedroneTestNode::initializerPlanning()
     ompl_planner_->setBounds(min_bounds, max_bounds);
 
     // Set the start state for the OMPL planner
-    Eigen::Vector3d start_state(95.367, 15.637, 6.376);
-    start_point_ = start_state;
-    ompl_planner_->setStart(start_state);
+    start_point_ = drone_position_;
+    ompl_planner_->setStart(drone_position_);
+
+    // Seed speed of the RRT paths relative to the max speed (see below)
+    const double initial_speed_ratio = this->has_parameter("optimization.initialization.initial_speed_ratio") ?
+        this->get_parameter("optimization.initialization.initial_speed_ratio").as_double() : 1.0;
 
     int successive_failed_planning_attempts = 0;
     // Start timer for initialization process
@@ -692,7 +721,13 @@ void LinedroneTestNode::initializerPlanning()
                     path_matrix(2, i) = real_state->values[2];
                     if (i>0 && i < path->getStateCount() - 1)
                     {
-                        path_matrix(3, i) = linedrone_config.robot_max_speed_ * 0.25; // Assuming the 4th dimension is velocity
+                        // Seed speed of the interior control points (4th dimension). The time and energy costs both
+                        // decrease with the speed and the safety cost doesn't depend on it, so the optimizer starts at the
+                        // maximum speed and only lowers it where needed (acceleration constraint). Seeding all the
+                        // individuals at the same lower speed (0.5 x max) left the speed genes without diversity:
+                        // the crossover of identical genes gives the same genes and the mutation alone moved them too
+                        // slowly, the speeds stayed near the seed.
+                        path_matrix(3, i) = linedrone_config.robot_max_speed_ * initial_speed_ratio;
                     }
                     else
                         path_matrix(3, i) = 0.0; // No velocity at the start and end points
@@ -744,6 +779,10 @@ pagmo::vector_double LinedroneTestNode::linedroneFitness(const pagmo::vector_dou
     std::vector<arena_core::ControlPoint<double, 4>> control_points = pagmoDVToControlPoints(dv);
     nurbs_->setControlPoints(control_points);
     Eigen::MatrixXd pt = nurbs_->evaluate();
+
+    // Degenerate curve (e.g. null weights on a whole span), rejected instead of giving NaN costs that crash NSGA-II
+    if (pt.cols() != static_cast<int>(linedrone_config.base_config.sample_size) || !pt.allFinite())
+        return linedrone_output_.fitness_array_;
 
     // Evaluate the NURBS curve using the Linedrone NURBS Analyzer
     linedrone_nurbs_analyzer_->eval(pt, linedrone_output_);
@@ -887,12 +926,41 @@ void LinedroneTestNode::ARENAOptimization()
         }
     }
 
-    // Apply adaptive voting algorithm to select the best solution
+    // Safety check of every feasible solution: the optimizer only checks the samples of the trajectories, a segment
+    // between two samples can still cross an obstacle. Only the safe solutions can be chosen.
+    std::vector<bool> safe(pop_linedrone_filtered.size(), false);
+    std::vector<pagmo::vector_double> safe_fitness;
+    std::vector<size_t> safe_indexes;
+    for (size_t i = 0; i < pop_linedrone_filtered.size(); i++)
+    {
+        nurbs_->setControlPoints(pagmoDVToControlPoints(pop_linedrone_filtered.get_x()[i]));
+        safe[i] = isPathSafe(nurbs_->evaluate());
+        if (safe[i])
+        {
+            safe_fitness.push_back(pop_linedrone_filtered.get_f()[i]);
+            safe_indexes.push_back(i);
+        }
+    }
+    RCLCPP_INFO(get_logger(), "ARENAOptimization => %zu / %zu feasible solutions are safe.", safe_indexes.size(), safe.size());
+
+    if (safe_indexes.empty())
+    {
+        RCLCPP_ERROR(get_logger(), "ARENAOptimization => No safe solution found.");
+        delete[] x_bounds;
+        delete[] y_bounds;
+        delete[] z_bounds;
+        planning_activated_ = false;
+        planning_goal_.goal_sent_ = false;
+        publishPlanningInfos(pop_linedrone_filtered.get_f(), safe, -1);
+        return;
+    }
+
+    // Apply adaptive voting algorithm to select the best safe solution
     std::vector<double> costs_weights;
     costs_weights.push_back(this->get_parameter("optimization.adaptive_costs_weights.time").as_double());
     costs_weights.push_back(this->get_parameter("optimization.adaptive_costs_weights.safety").as_double());
     costs_weights.push_back(this->get_parameter("optimization.adaptive_costs_weights.energy").as_double());
-    int best_idx = arena_core::adaptive_voting_algorithm::getBetterCandidateIndex(pop_linedrone_filtered.get_f(), costs_weights);
+    int best_idx = static_cast<int>(safe_indexes[arena_core::adaptive_voting_algorithm::getBetterCandidateIndex(safe_fitness, costs_weights)]);
     pagmo::vector_double best_solution = pop_linedrone_filtered.get_x()[best_idx];
 
     // Convert the best solution to control points
@@ -910,7 +978,7 @@ void LinedroneTestNode::ARENAOptimization()
     planning_activated_ = false;
     planning_goal_.goal_sent_ = false;
 
-    publishPlanningInfos(pop_linedrone_filtered.get_f(), best_idx);
+    publishPlanningInfos(pop_linedrone_filtered.get_f(), safe, best_idx);
 }
 
 void LinedroneTestNode::updateOptimizationParameters()
@@ -938,7 +1006,7 @@ void LinedroneTestNode::updateOptimizationParameters()
                                                                                       std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>{});
 }
 
-void LinedroneTestNode::publishPlanningInfos(const std::vector<pagmo::vector_double>& feasible_fitness, int chosen_idx)
+void LinedroneTestNode::publishPlanningInfos(const std::vector<pagmo::vector_double>& feasible_fitness, const std::vector<bool>& safe, int chosen_idx)
 {
     const bool feasible = chosen_idx >= 0 && chosen_idx < static_cast<int>(feasible_fitness.size());
     const double max_cost = std::numeric_limits<double>::max();
@@ -972,11 +1040,21 @@ void LinedroneTestNode::publishPlanningInfos(const std::vector<pagmo::vector_dou
     infos_msg.nurbs_sample_size = linedrone_config.base_config.sample_size;
     infos_msg.rrt_range = this->get_parameter("optimization.initialization.rrt_range").as_double();
 
-    // Best value reached for every objective by the feasible solutions
+    // Safe solutions, the only ones that can be chosen
+    std::vector<pagmo::vector_double> safe_fitness;
+    for (size_t i = 0; i < feasible_fitness.size(); i++)
+    {
+        if (i < safe.size() && safe[i])
+            safe_fitness.push_back(feasible_fitness[i]);
+    }
+    infos_msg.nb_of_feasible_solutions = static_cast<int32_t>(feasible_fitness.size());
+    infos_msg.nb_of_safe_solutions = static_cast<int32_t>(safe_fitness.size());
+
+    // Best value reached for every objective by the safe solutions
     infos_msg.best_time_cost = max_cost;
     infos_msg.best_security_cost = max_cost;
     infos_msg.best_energy_cost = max_cost;
-    for (const auto& fitness : feasible_fitness)
+    for (const auto& fitness : safe_fitness)
     {
         infos_msg.best_time_cost = std::min(infos_msg.best_time_cost, fitness[0]);
         infos_msg.best_security_cost = std::min(infos_msg.best_security_cost, fitness[1]);
@@ -991,16 +1069,29 @@ void LinedroneTestNode::publishPlanningInfos(const std::vector<pagmo::vector_dou
     infos_msg.security_coefficient = this->get_parameter("optimization.adaptive_costs_weights.safety").as_double();
     infos_msg.energy_coefficient = this->get_parameter("optimization.adaptive_costs_weights.energy").as_double();
 
-    // Pareto front approximation: non-dominated feasible solutions of the final population
-    if (feasible)
+    // Non-dominated solutions (pagmo needs at least 2 points to sort them)
+    auto firstFront = [](const std::vector<pagmo::vector_double>& fitness) -> std::vector<pagmo::pop_size_t>
     {
-        std::vector<pagmo::pop_size_t> first_front = std::get<0>(pagmo::fast_non_dominated_sorting(feasible_fitness))[0];
-        for (pagmo::pop_size_t idx : first_front)
-        {
-            infos_msg.pareto_front_time_costs.push_back(feasible_fitness[idx][0]);
-            infos_msg.pareto_front_security_costs.push_back(feasible_fitness[idx][1]);
-            infos_msg.pareto_front_energy_costs.push_back(feasible_fitness[idx][2]);
-        }
+        if (fitness.size() < 2)
+            return std::vector<pagmo::pop_size_t>(fitness.size(), 0);
+        return std::get<0>(pagmo::fast_non_dominated_sorting(fitness))[0];
+    };
+
+    // Pareto front approximation: non-dominated feasible solutions of the final population, with their safety
+    for (pagmo::pop_size_t idx : firstFront(feasible_fitness))
+    {
+        infos_msg.pareto_front_time_costs.push_back(feasible_fitness[idx][0]);
+        infos_msg.pareto_front_security_costs.push_back(feasible_fitness[idx][1]);
+        infos_msg.pareto_front_energy_costs.push_back(feasible_fitness[idx][2]);
+        infos_msg.pareto_front_safe.push_back(idx < safe.size() && safe[idx]);
+    }
+
+    // Non-dominated safe solutions, they can be dominated by unsafe solutions of the Pareto front above
+    for (pagmo::pop_size_t idx : firstFront(safe_fitness))
+    {
+        infos_msg.safe_front_time_costs.push_back(safe_fitness[idx][0]);
+        infos_msg.safe_front_security_costs.push_back(safe_fitness[idx][1]);
+        infos_msg.safe_front_energy_costs.push_back(safe_fitness[idx][2]);
     }
 
     nurbs_infos_pub_->publish(infos_msg);
@@ -1029,22 +1120,31 @@ bool LinedroneTestNode::isCurrentPathSafe() const
         return false; // Path size mismatch
     }
 
-    // Check if the path is safe by checking for collisions with the octree
-    for (int i = 0; i < arena_path_->cols() - 1; ++i)
+    if (!isPathSafe(*arena_path_))
     {
-        Eigen::Vector3d start = (*arena_path_).col(i);
-        Eigen::Vector3d end = (*arena_path_).col(i + 1);
-
-        // Check if the segment between start and end is in collision with the octree
-        if (costmap_mapping_ && costmap_mapping_->isOccupiedRayTracing(start, end))
-        {
-            RCLCPP_WARN(get_logger(), "Collision detected along the path segment from (%f, %f, %f) to (%f, %f, %f).",
-                        start.x(), start.y(), start.z(), end.x(), end.y(), end.z());
-            return false; // Collision detected
-        }
+        RCLCPP_WARN(get_logger(), "Collision detected along the current path.");
+        return false;
     }
-    
+
     return true; // No collisions detected along the path
+}
+
+bool LinedroneTestNode::isPathSafe(const Eigen::MatrixXd& path) const
+{
+    if (!costmap_mapping_)
+        return false;
+
+    // Check if every segment between two consecutive samples is free in the octree
+    for (int i = 0; i < path.cols() - 1; ++i)
+    {
+        Eigen::Vector3d start = path.block<3, 1>(0, i);
+        Eigen::Vector3d end = path.block<3, 1>(0, i + 1);
+
+        if (costmap_mapping_->isOccupiedRayTracing(start, end))
+            return false;
+    }
+
+    return true;
 }
 
 // Main logic of the node
@@ -1087,6 +1187,7 @@ LinedroneTestNode::LinedroneTestNode(rclcpp::NodeOptions options)
 
     // ROS Subscription Initialization
     goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(ros_namespace_ + "goal_pose", 10, std::bind(&LinedroneTestNode::goalPoseCallback, this, std::placeholders::_1));
+    drone_pose_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(ros_namespace_ + "drone_pose", 10, std::bind(&LinedroneTestNode::dronePoseCallback, this, std::placeholders::_1));
     planning_activation_sub_ = this->create_subscription<std_msgs::msg::Bool>(ros_namespace_ + "planning_activation", 10, std::bind(&LinedroneTestNode::planningActivationCallback, this, std::placeholders::_1));
     inflated_octomap_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/navigation/inflated_octomap/full", 10, std::bind(&LinedroneTestNode::inflatedOctomapCallback, this, std::placeholders::_1));
     color_octomap_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/navigation/sdf_octomap/full", 10, std::bind(&LinedroneTestNode::colorOctreeCallback, this, std::placeholders::_1));

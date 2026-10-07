@@ -1,0 +1,52 @@
+# Parameters of the random cluttered map generator (nodes/linedrone/map_generator/map_generator.cpp).
+# Generate a map with: scripts/linedrone/map_generator/generate_map.sh
+#
+# The same config and seed always give the same map. Every obstacle has its own random stream derived from the
+# seed, so changing the density keeps the obstacles that were already there and adds/removes the last ones.
+
+map_generator:
+  name: "cluttered_map"                 # Maps are saved as <output_directory>/seed_<seed>/<name>_seed<seed>.bt (+ .yaml metadata)
+  seed: 42
+  output_directory: "/home/dev_ws/src/arena_core/demos/ressources/generated_map"
+
+  map:
+    resolution: 0.5                     # Voxel size in meters
+    origin: {x: 0.0, y: 0.0, z: 0.0}    # Lower corner of the map in meters
+    size: {x: 100.0, y: 100.0, z: 40.0} # Dimensions of the map in meters
+    mark_bounds: true                   # Free voxels at the 8 corners, so the planner bounds (extent of the octree) match the map size
+
+  obstacles:
+    # Number of obstacles = density * (size.x * size.y) / density_reference_area
+    density: 1.5                        # Obstacles per density_reference_area of ground
+    density_reference_area: 100.0       # m^2 (100 = a 10 m x 10 m cell)
+    volume:                             # Volume of each obstacle in m^3, log-normal distribution
+      mean: 80.0
+      std_ratio: 0.6                    # Standard deviation / mean (0 = every obstacle has the mean volume)
+      min: 2.0
+      max: 800.0
+    max_aspect_ratio: 3.0               # Max ratio between the largest and the smallest dimension of an obstacle
+    ground_anchored_ratio: 0.3          # Fraction of the obstacles standing on the ground (upright), the others float in 3D
+    orientation: "full"                 # none | yaw | full (ground anchored obstacles never go beyond yaw)
+    min_clearance: 1.5                  # Min gap between two obstacles in meters. 0 lets them touch, < 0 lets them overlap
+    max_placement_attempts: 100         # Attempts to place an obstacle before giving up on it
+    shapes:                             # Relative probability of every shape. Unlisted shapes are not used
+      box: 1.0
+      sphere: 1.0
+      ellipsoid: 1.0
+      cylinder: 1.0
+      cone: 1.0
+      capsule: 1.0
+      torus: 0.5
+      prism: 1.0
+
+  # Spheres kept free of obstacles, e.g. [{x: 50.0, y: 50.0, z: 20.0, radius: 5.0}]
+  free_zones: []
+
+  # Writes <config_directory>/<name>_seed<seed>.yaml, read by the testbench with map_name:=<name>_seed<seed>.
+  # The start and the goal are kept at least <clearance> m away from the obstacles.
+  testbench:
+    enabled: true
+    config_directory: "/home/dev_ws/src/arena_core/demos/config/linedrone/testbench_configs"
+    clearance: 6.0
+    start: {x: 8.0, y: 8.0, z: 10.0}
+    goal: {x: 92.0, y: 92.0, z: 30.0}

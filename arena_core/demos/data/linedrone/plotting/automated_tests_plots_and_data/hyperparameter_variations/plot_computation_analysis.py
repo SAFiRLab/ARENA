@@ -14,8 +14,14 @@ so its fronts are not directly comparable to a reference computed with another s
 adds it: its runs are scored against the same reference front, normalization and HV reference point as the other
 sweeps, without being used to build them (the other curves are the same with or without it).
 
+Benchmark planners (--baselines <label>=<report folder>, see compare_baselines.py): their mean planning time (+- std)
+and their mean IGD+ and hypervolume ratio are drawn as horizontal lines (grey shades, one marker per planner), they don't
+depend on the hyperparameters of ARENA. Their safe solutions are part of the reference front (non-dominated union), like
+in compare_baselines.py, --baselines-scored-only scores them without adding them to the reference front.
+
 Usage:
     python3 plot_computation_analysis.py [--sweeps <report folders>] [--reference <report folders>]
+                                         [--baselines <label>=<report folder> ...] [--baselines-scored-only]
                                          [--onboard <report folders> --onboard-label <device>]
                                          [--quality-sweeps nb_of_generations population_size rrt_range]
                                          [--sample-size-metrics-plot] [--quality-x hyperparameter|time]
@@ -85,6 +91,68 @@ NB_OF_MARKERS = 10  # Markers per curve, the sweeps have up to ~100 settings
 # Size of each figure in inches, the default is one column of a two-column paper
 FIGURE_SIZE = (3.5, 2.6)
 
+# Benchmark planners: (color, marker), in the order of --baselines
+BASELINE_STYLES = [('black', 'o'), ('dimgray', 's'), ('gray', '^'), ('darkgray', 'D'), ('silver', 'v'), ('black', 'x')]
+BASELINE_LINE_WIDTH = 0.9
+BASELINE_STD_ALPHA = 0.12
+NB_OF_BASELINE_MARKERS = 5
+
+
+def load_baselines(values):
+    """Returns [(label, runs)] of the --baselines arguments <label>=<report folder>."""
+    baselines = []
+    for value in values:
+        if '=' not in value:
+            sys.exit('--baselines expects <label>=<report folder>, got {}'.format(value))
+        label, folder = value.split('=', 1)
+        runs = []
+        for report, pareto in find_reports([folder]):
+            runs += load_runs(report, pareto)
+        if not runs:
+            print('Warning: no report for {} in {}, it is skipped'.format(label, folder), file=sys.stderr)
+            continue
+        baselines.append((label, runs))
+    return baselines
+
+
+def plot_baseline_lines(ax, baselines, value, linestyle, with_std=True, ylim_top=None):
+    """Horizontal line of the mean of value(run) of every benchmark planner, with markers to tell them apart."""
+    x_min, x_max = ax.get_xlim()
+    log_x = ax.get_xscale() == 'log'
+    x = np.geomspace(x_min, x_max, 50) if log_x else np.linspace(x_min, x_max, 50)
+    for i, (label, runs) in enumerate(baselines):
+        color, marker = BASELINE_STYLES[i % len(BASELINE_STYLES)]
+        values = np.array([value(r) for r in runs], dtype=float)
+        values = values[~np.isnan(values)]
+        if len(values) == 0:
+            continue
+        mean, std = np.mean(values), (np.std(values, ddof=1) if len(values) > 1 else 0.0)
+        if ylim_top is not None and mean > ylim_top:
+            print('{}: {:.3f} is above the axis ({:.3f}), its line is not visible'.format(label, mean, ylim_top))
+        # Markers shifted for every planner so that overlapping lines stay readable
+        ax.plot(x, np.full_like(x, mean), color=color, linewidth=BASELINE_LINE_WIDTH, linestyle=linestyle, marker=marker,
+                markersize=MARKER_SIZE, markerfacecolor='white', markeredgewidth=0.8,
+                markevery=(i * 2 % 10, 50 // NB_OF_BASELINE_MARKERS), zorder=4)
+        if with_std and std > 0.0:
+            ax.fill_between(x, max(mean - std, 0.0), mean + std, color=color, alpha=BASELINE_STD_ALPHA, linewidth=0, zorder=2)
+    ax.set_xlim(x_min, x_max)
+
+
+def add_baselines_legend(ax, baselines, loc):
+    """Legend of the benchmark planners (marker and grey shade), kept with the legend of the sweeps."""
+    if not baselines:
+        return
+    first_legend = ax.get_legend()
+    handles = []
+    for i, (label, _) in enumerate(baselines):
+        color, marker = BASELINE_STYLES[i % len(BASELINE_STYLES)]
+        handles.append(ax.plot([], [], color=color, linewidth=BASELINE_LINE_WIDTH, marker=marker, markersize=MARKER_SIZE,
+                               markerfacecolor='white', markeredgewidth=0.8, label=label)[0])
+    ax.legend(handles=handles, loc=loc, frameon=False, handlelength=1.8, borderaxespad=0.2, labelspacing=0.3)
+    if first_legend is not None:
+        ax.add_artist(first_legend)
+
+
 OBJECTIVE_COLUMNS = {'time': ('Time coefficient', 'Chosen time cost'),
                      'safety': ('Security coefficient', 'Chosen security cost'),
                      'energy': ('Energy coefficient', 'Chosen energy cost')}
@@ -137,7 +205,7 @@ def default_index(settings, hyperparameter):
     return int(np.argmin(np.abs(np.log(settings / HYPERPARAMETERS[hyperparameter][1]))))
 
 
-def plot_planning_time(ax, sweeps, onboard, onboard_label):
+def plot_planning_time(ax, sweeps, onboard, onboard_label, baselines=()):
     for hyperparameter in [h for h in HYPERPARAMETERS if h in sweeps]:
         runs = sweeps[hyperparameter]
         label, default = HYPERPARAMETERS[hyperparameter]
@@ -166,8 +234,12 @@ def plot_planning_time(ax, sweeps, onboard, onboard_label):
     ax.legend(loc='upper left', frameon=False, handlelength=1.8, borderaxespad=0.2, labelspacing=0.3)
     ax.grid(True, which='major', linewidth=0.4, alpha=0.4)
 
+    if baselines:
+        plot_baseline_lines(ax, baselines, lambda r: r['planning_time'], '-', ylim_top=ax.get_ylim()[1])
+        add_baselines_legend(ax, baselines, 'upper center')
 
-def plot_quality(ax, sweeps, quality_sweeps, smoothing, quality_x):
+
+def plot_quality(ax, sweeps, quality_sweeps, smoothing, quality_x, baselines=(), xlim=None):
     """Pareto quality of the sweeps.
 
     quality_x:
@@ -230,6 +302,16 @@ def plot_quality(ax, sweeps, quality_sweeps, smoothing, quality_x):
     # Inside the axes, on the left between the IGD+ and HV curves of the generations sweep (free area of the plot)
     ax.legend(loc='center left', bbox_to_anchor=(0.03, 0.5), frameon=False,
               handlelength=1.5, handletextpad=0.4, borderaxespad=0.1, labelspacing=0.3)
+
+    if xlim is not None:
+        ax.set_xlim(xlim)
+    if baselines:
+        # Only the feasible runs, like the sweeps: IGD+ (solid lines) on the left axis, HV ratio (dashed) on the right one
+        feasible = [(label, [r for r in runs if r['feasible']]) for label, runs in baselines]
+        plot_baseline_lines(ax, feasible, lambda r: r['igd_plus'], IGD_STYLE['linestyle'], with_std=False)
+        ax_hv.set_xlim(ax.get_xlim())
+        plot_baseline_lines(ax_hv, feasible, lambda r: r['hypervolume_ratio'], HV_STYLE['linestyle'], with_std=False)
+        add_baselines_legend(ax, baselines, 'upper right')
 
 
 def check_reference(reference_folders, expected_runs):
@@ -294,6 +376,10 @@ def main():
     parser.add_argument('--reference', nargs='*', default=DEFAULT_REFERENCE,
                         help='Report folders of the reference runs (reference_front.sh), none to draw panel (a) only')
     parser.add_argument('--onboard', nargs='*', default=[], help='Report folders of the sweeps run on the onboard hardware')
+    parser.add_argument('--baselines', nargs='*', default=[],
+                        help='<label>=<report folder> of the benchmark planners (compare_baselines.py), drawn as lines')
+    parser.add_argument('--baselines-scored-only', action='store_true',
+                        help='Score the benchmark planners without adding their solutions to the reference front')
     parser.add_argument('--onboard-label', default='Onboard', help='Legend of the onboard results')
     parser.add_argument('--quality-x', choices=['hyperparameter', 'time'], default='hyperparameter',
                         help='x axis of panel (b): hyperparameter value / default value (same as panel (a)) or planning time')
@@ -318,11 +404,13 @@ def main():
     if not sweeps:
         sys.exit('No sweep report found')
     onboard = load_sweeps(args.onboard) if args.onboard else {}
+    baselines = load_baselines(args.baselines)
+    baseline_runs = [r for _, runs in baselines for r in runs]
 
     # Panel (b) needs the complete reference front (reference_front.sh)
     reference_runs = []
     for report, pareto in find_reports(args.reference):
-        reference_runs += load_runs(report, pareto)
+        reference_runs += load_runs(report, pareto, all_safe_solutions=True)
     draw_quality = bool(reference_runs)
     if not reference_runs:
         print('No reference report (--reference): only panel (a) is drawn')
@@ -342,9 +430,23 @@ def main():
             scored_runs = sweeps.get('nurbs_sample_size', [])
             args.quality_sweeps = list(args.quality_sweeps) + ['nurbs_sample_size']
             print('Sample size sweep added to panel (b): {} runs scored against the same reference'.format(len(scored_runs)))
+        # The benchmark planners are part of the reference front (non-dominated union) unless --baselines-scored-only
+        if args.baselines_scored_only:
+            scored_runs = list(scored_runs) + baseline_runs
+        else:
+            quality_runs = quality_runs + baseline_runs
         _, info = evaluate(quality_runs, reference_runs, 1.1, 'worst', scored_runs)
         print('Reference front: {} points'.format(info['reference_size']))
 
+    for label, runs in baselines:
+        times = np.array([r['planning_time'] for r in runs])
+        line = '{}: {} runs ({} feasible), planning time {:.3f} +- {:.3f} s'.format(
+            label, len(runs), sum(r['feasible'] for r in runs), times.mean(), times.std(ddof=1) if len(times) > 1 else 0.0)
+        if draw_quality:
+            feasible = [r for r in runs if r['feasible']]
+            line += ', IGD+ {:.3f}, HV ratio {:.3f}'.format(np.nanmean([r['igd_plus'] for r in feasible]),
+                                                           np.nanmean([r['hypervolume_ratio'] for r in feasible]))
+        print(line)
     for hyperparameter, runs in sweeps.items():
         x, mean, std = per_setting(runs, hyperparameter, lambda r: r['planning_time'])
         print('{}: {} runs, planning time {:.2f} s ({:g}) to {:.2f} s ({:g})'.format(
@@ -358,12 +460,14 @@ def main():
     figures = {}
 
     fig_time, ax_time = plt.subplots(figsize=args.size)
-    plot_planning_time(ax_time, sweeps, onboard, args.onboard_label)
+    plot_planning_time(ax_time, sweeps, onboard, args.onboard_label, baselines)
     figures['planning_time'] = fig_time
 
     if draw_quality:
         fig_quality, ax_quality = plt.subplots(figsize=args.size)
-        plot_quality(ax_quality, sweeps, args.quality_sweeps, args.smooth, args.quality_x)
+        # Same x axis as the planning time figure, a setting is at the same position in both figures
+        plot_quality(ax_quality, sweeps, args.quality_sweeps, args.smooth, args.quality_x, baselines,
+                     ax_time.get_xlim() if args.quality_x == 'hyperparameter' else None)
         if args.quality_x == 'hyperparameter':
             # Same x axis as the planning time figure, a setting is at the same position in both figures
             ax_quality.set_xlim(ax_time.get_xlim())

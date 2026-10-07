@@ -17,4 +17,11 @@ if(ENABLE_TESTING)
         ${ARENA_DEMOS_SRCS}
     )
     ament_target_dependencies(traversability_map_test grid_map_core pcl_conversions)
+
+    ament_add_gtest(map_generator_test
+        linedrone/map_generator/map_generator_test.cpp
+        ${ARENA_DEMOS_MAP_GENERATOR_SRCS}
+    )
+    target_link_libraries(map_generator_test ${OCTOMAP_LIBRARIES} yaml-cpp)
+    ament_target_dependencies(map_generator_test grid_map_core)
 endif()

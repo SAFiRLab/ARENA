@@ -1,0 +1,15 @@
+# Spline NSGA-II benchmark planner (nodes/testbench/benchmarks/spline_nsga2), Ahmed and Deb (ROBIO 2011, Soft Comput. 2013).
+# The robot parameters, the sample size, the number of generations and the population size are the ones of ARENA
+# (linedrone_problem_params.yaml), the testbench can change them.
+/**:
+    ros__parameters:
+        spline_nsga2:
+            nb_of_control_points: 8         # Free control points of the B-spline (5 to 8 in the paper)
+            mutation_probability: 0.05      # 0.03 to 0.08 in the paper
+            crossover_probability: 0.95     # Same as ARENA
+            penalty_coefficient: 1.0        # Objectives multiplied by 1 + coefficient * number of obstacles crossed
+            penalize_acceleration: true     # Also penalize the acceleration above robot.max_acceleration
+        benchmark:
+            nurbs_degree: 3                 # Uniform B-spline of order 4, as in the paper
+            speed: 0.5                      # Constant speed at the control points (robot.max_speed)
+            speed_ramp_length: 0.0          # > 0: the speed grows over this distance after the start and before the goal

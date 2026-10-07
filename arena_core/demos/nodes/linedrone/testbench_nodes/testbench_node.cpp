@@ -27,6 +27,7 @@
 #include <filesystem>
 #include <fstream>
 #include <cstdlib>
+#include <algorithm>
 #include <iomanip>
 #include <map>
 #include <chrono>
@@ -82,6 +83,9 @@ private:
     void runHyperparametersVariationTests(rclcpp::Rate& rate);
     void runOptimalSolutionPerObjectiveTests(rclcpp::Rate& rate);
     void runRisksVarationTests(rclcpp::Rate& rate);
+    void runRiskSweepTests(rclcpp::Rate& rate);
+    void runRisksSchedule(rclcpp::Rate& rate, const std::vector<std::vector<double>>& risks,
+                          const std::vector<std::vector<double>>& initial_coeffs);
 
     void publishMission();
     void publishMissionRisksPaths();
@@ -116,6 +120,7 @@ private:
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr path_planning_finished_counter_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr planning_activated_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr planning_goal_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr drone_pose_pub_;
     rclcpp::Publisher<arena_msgs::msg::Mission>::SharedPtr mission_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr nurbs_from_risks_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr risks_variation_paths_pub_;
@@ -134,13 +139,21 @@ private:
     // Steps and hyperparameters variation tests write the planning report, the other tests the risks report
     bool planning_report_;
     int nurbs_infos_counter_;
+    // Plannings whose chosen trajectory is feasible and safe
+    int feasible_runs_counter_;
     bool steps_variation_tests_;
     bool hyperparameters_variation_tests_;
     bool optimal_solution_per_objective_tests_;
     bool risks_variation_tests_;
+    bool risk_sweep_tests_;
+    // Risks (battery, wind, location) of the current planning, written in the risks report
+    std::vector<double> current_risks_ = {0.0, 0.0, 0.0};
     bool costmap_received_;
     bool planning_requested_;
     geometry_msgs::msg::PointStamped goal_msg_;
+    // Start of the planning, sent before every planning request when the testbench config of the map gives one
+    bool publish_drone_position_;
+    geometry_msgs::msg::PointStamped drone_pose_msg_;
     std::vector<std::vector<double>> mission_risks_;
     std::vector<visualization_msgs::msg::Marker> mission_risks_paths_;
     std::vector<std::vector<double>> mission_risks_paths_costs_;
@@ -236,7 +249,10 @@ void TestbenchNode::initCSVFile()
         "RRT range" << "," <<
         "Initialization time" << "," <<
         "Optimization time" << "," <<
-        "Number of control points" << std::endl;
+        "Number of control points" << "," <<
+        "Safe pareto front size" << "," <<
+        "Feasible solutions" << "," <<
+        "Safe solutions" << std::endl;
     }
     else
     {
@@ -247,7 +263,16 @@ void TestbenchNode::initCSVFile()
         "Energy Cost" << "," <<
         "Baterry risk" << "," <<
         "Location risk" << "," <<
-        "Wind risk" <<
+        "Wind risk" << "," <<
+        // Added for the comparison with the benchmark planners, after the original columns
+        "Min Closest Obstacle Distance" << "," <<
+        "Time coefficient" << "," <<
+        "Security coefficient" << "," <<
+        "Energy coefficient" << "," <<
+        "Planing Time" << "," <<
+        "Chosen time cost" << "," <<
+        "Chosen security cost" << "," <<
+        "Chosen energy cost" <<
         std::endl;
     }
 
@@ -275,7 +300,9 @@ void TestbenchNode::initCSVFile()
     "Time cost" << "," <<
     "Security cost" << "," <<
     "Energy cost" << "," <<
-    "RRT range" << std::endl;
+    "RRT range" << "," <<
+    "Safe" << "," <<
+    "In generated front" << std::endl;
 
     pareto_file.close();
 }
@@ -412,6 +439,14 @@ void TestbenchNode::requestPlanning()
 {
     waitForSubscribers(planning_activated_pub_, 5s);
     waitForSubscribers(planning_goal_pub_, 5s);
+
+    // The planner is restarted between the runs and forgets the drone position, send it before every request
+    if (publish_drone_position_)
+    {
+        waitForSubscribers(drone_pose_pub_, 5s);
+        drone_pose_msg_.header.stamp = this->now();
+        drone_pose_pub_->publish(drone_pose_msg_);
+    }
 
     // Publish planning activated
     std_msgs::msg::Bool planning_activated_msg;
@@ -600,6 +635,13 @@ void TestbenchNode::runHyperparametersVariationTests(rclcpp::Rate& rate)
     int pagmo_calls = 0;
     int iteration_counter = 0;
 
+    // Every hyperparameter value needs nb_of_iterations runs with a feasible and safe trajectory. The infeasible runs are
+    // also written in the reports, max_nb_of_runs stops a value that never gives a feasible trajectory.
+    int max_nb_of_runs = static_cast<int>(this->get_parameter("hyperparameters_variation_tests.max_nb_of_runs").as_double());
+    if (max_nb_of_runs <= 0)
+        max_nb_of_runs = 3 * nb_of_iterations;
+    int feasible_runs_at_value_start = feasible_runs_counter_;
+
     // Fixed hyperparameters, set before the varied one so the varied one wins
     auto fixedValue = [this](const std::string& name) -> double
     { return this->get_parameter("fixed_hyperparameters." + name).as_double(); };
@@ -659,10 +701,16 @@ void TestbenchNode::runHyperparametersVariationTests(rclcpp::Rate& rate)
             }
             else
             {
-                if (path_planning_finished_counter_ > counter)
+                // The report of the planning (nurbs_infos) is needed to know if its trajectory is feasible
+                if (path_planning_finished_counter_ > counter && nurbs_infos_counter_ >= path_planning_finished_counter_)
                 {
-                    if (iteration_counter >= nb_of_iterations)
+                    int feasible_iterations = feasible_runs_counter_ - feasible_runs_at_value_start;
+                    if (feasible_iterations >= nb_of_iterations || iteration_counter >= max_nb_of_runs)
                     {
+                        if (feasible_iterations < nb_of_iterations)
+                            RCLCPP_WARN(get_logger(), "%s = %f: only %i feasible runs out of %i (max number of runs reached)",
+                                        hyperparameter_name.c_str(), hyperparameter_current, feasible_iterations, iteration_counter);
+
                         // Change the hyperparameter
                         if (hyperparameter_current >= hyperparameter_max)
                         {
@@ -692,6 +740,7 @@ void TestbenchNode::runHyperparametersVariationTests(rclcpp::Rate& rate)
                         }
 
                         iteration_counter = 0;
+                        feasible_runs_at_value_start = feasible_runs_counter_;
                     }
 
                     if (pagmo_calls >= max_pagmo_optimizer_node_calls)
@@ -706,7 +755,8 @@ void TestbenchNode::runHyperparametersVariationTests(rclcpp::Rate& rate)
                     requestPlanning();
 
                     RCLCPP_INFO(get_logger(), "Hyperparameter: %s, current value: %f, max value: %f", hyperparameter_name.c_str(), hyperparameter_current, hyperparameter_max);
-                    RCLCPP_INFO(get_logger(), "Iteration: %i / %i", iteration_counter, nb_of_iterations);
+                    RCLCPP_INFO(get_logger(), "Iteration: %i / %i feasible (%i runs, max %i)",
+                                feasible_runs_counter_ - feasible_runs_at_value_start, nb_of_iterations, iteration_counter, max_nb_of_runs);
 
                     pagmo_calls++;
                     counter++;
@@ -805,7 +855,70 @@ void TestbenchNode::runOptimalSolutionPerObjectiveTests(rclcpp::Rate& rate)
     }
 }
 
+namespace
+{
+
+// Cost coefficients of the planner from the risks (battery, wind, location) and the initial coefficients (time, safety,
+// energy), Eq. 11 of the paper without the communication risk
+std::vector<double> calculateCoeffs(const std::vector<double>& current_risks, const std::vector<double>& initial_coeffs)
+{
+    double time_coeff = initial_coeffs[0] * (1.0 - ((1.0/2.0*current_risks[1]) + (1.0/4.0*current_risks[2]) + (1.0/4.0*0.0) - current_risks[0]));
+    double safety_coeff = initial_coeffs[1] * (1.0 + ((1.0/2.0*current_risks[1]) + (1.0/4.0*current_risks[2]) + (1.0/4.0*0.0) - current_risks[0]));
+    double energy_coeff = initial_coeffs[2] * (1.0 + ((1.0/2.0*current_risks[1]) + (1.0/2.0*current_risks[0])));
+
+    return {time_coeff, safety_coeff, energy_coeff};
+}
+
+} // namespace
+
 void TestbenchNode::runRisksVarationTests(rclcpp::Rate& rate)
+{
+    // Risks order: battery, wind, location
+    std::vector<std::vector<double>> risks = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0},
+                                              {1.0, 0.0, 1.0}, {0.0, 1.0, 1.0}, {1.0, 1.0, 0.0}};
+    std::vector<std::vector<double>> initial_risks = {{0.33, 0.33, 0.33}, {0.33, 0.33, 0.33}, {0.25, 0.5, 0.25},
+                                                      {0.25, 0.5, 0.25}, {0.33, 0.33, 0.33}, {0.25, 0.5, 0.25}};
+
+    runRisksSchedule(rate, risks, initial_risks);
+    RCLCPP_INFO(get_logger(), "End of the risks variation tests");
+
+    publishRisksVariationPaths();
+    //publishMissionRisksPaths();
+    spinOnce();
+}
+
+void TestbenchNode::runRiskSweepTests(rclcpp::Rate& rate)
+{
+    // Every risk (battery, wind, location) is swept from 0 to 1 with the others null, like Fig. 4 of the paper
+    double step = this->get_parameter("risk_sweep_tests.step").as_double();
+    if (step <= 0.0)
+    {
+        RCLCPP_ERROR(get_logger(), "The risk step must be positive");
+        return;
+    }
+    std::vector<double> initial_coeffs = {this->get_parameter("risk_sweep_tests.initial_coeffs.time").as_double(),
+                                          this->get_parameter("risk_sweep_tests.initial_coeffs.safety").as_double(),
+                                          this->get_parameter("risk_sweep_tests.initial_coeffs.energy").as_double()};
+
+    const int nb_of_levels = static_cast<int>(std::lround(1.0 / step));
+    std::vector<std::vector<double>> risks;
+    for (size_t risk = 0; risk < 3; risk++)
+    {
+        for (int level = 0; level <= nb_of_levels; level++)
+        {
+            std::vector<double> current_risks(3, 0.0);
+            current_risks[risk] = std::min(1.0, level * step);
+            risks.push_back(current_risks);
+        }
+    }
+
+    runRisksSchedule(rate, risks, std::vector<std::vector<double>>(risks.size(), initial_coeffs));
+    RCLCPP_INFO(get_logger(), "End of the risk sweep tests");
+    spinOnce();
+}
+
+void TestbenchNode::runRisksSchedule(rclcpp::Rate& rate, const std::vector<std::vector<double>>& risks,
+                                     const std::vector<std::vector<double>>& initial_coeffs)
 {
     // Get the number of iterations for every sets of risks
     int nb_of_iterations = static_cast<int>(this->get_parameter("optimal_solution_per_objective_tests.nb_of_iter").as_double());
@@ -819,57 +932,32 @@ void TestbenchNode::runRisksVarationTests(rclcpp::Rate& rate)
     int counter = 0;
     int max_pagmo_optimizer_node_calls = 65;
     int pagmo_calls = 0;
-
-    std::vector<std::vector<double>> risks = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0},
-                                              {1.0, 0.0, 1.0}, {0.0, 1.0, 1.0}, {1.0, 1.0, 0.0}};
-    std::vector<std::vector<double>> initial_risks = {{0.33, 0.33, 0.33}, {0.33, 0.33, 0.33}, {0.25, 0.5, 0.25},
-                                                      {0.25, 0.5, 0.25}, {0.33, 0.33, 0.33}, {0.25, 0.5, 0.25}};
     size_t risk_id = 0;
 
-    // Lambda function calculating coeffs
-    auto calculateCoeffs = [](std::vector<double> current_risks, std::vector<double> initial_risks) -> std::vector<double>
+    auto setRisks = [this, &risks, &initial_coeffs](size_t id)
     {
-        // Risks order: battery, wind, location
-        double time_coeff = initial_risks[0] * (1.0 - ((1.0/2.0*current_risks[1]) + (1.0/4.0*current_risks[2]) + (1.0/4.0*0.0) - current_risks[0]));
-        double safety_coeff = initial_risks[1] * (1.0 + ((1.0/2.0*current_risks[1]) + (1.0/4.0*current_risks[2]) + (1.0/4.0*0.0) - current_risks[0]));
-        double energy_coeff = initial_risks[2] * (1.0 + ((1.0/2.0*current_risks[1]) + (1.0/2.0*current_risks[0])));
-
-        return {time_coeff, safety_coeff, energy_coeff};
+        current_risks_ = risks[id];
+        std::vector<double> coeffs = calculateCoeffs(risks[id], initial_coeffs[id]);
+        RCLCPP_INFO(get_logger(), "Risks (battery, wind, location): %.2f, %.2f, %.2f, coeffs: time: %f, safety: %f, energy: %f",
+                    risks[id][0], risks[id][1], risks[id][2], coeffs[0], coeffs[1], coeffs[2]);
+        setPlannerParameter(PLANNER_PARAM_COST_TIME, rclcpp::ParameterValue(coeffs[0]));
+        setPlannerParameter(PLANNER_PARAM_COST_SAFETY, rclcpp::ParameterValue(coeffs[1]));
+        setPlannerParameter(PLANNER_PARAM_COST_ENERGY, rclcpp::ParameterValue(coeffs[2]));
     };
-
-    std::vector<double> coeffs = calculateCoeffs(risks[risk_id], initial_risks[risk_id]);
-    setPlannerParameter(PLANNER_PARAM_COST_TIME, rclcpp::ParameterValue(coeffs[0]));
-    setPlannerParameter(PLANNER_PARAM_COST_SAFETY, rclcpp::ParameterValue(coeffs[1]));
-    setPlannerParameter(PLANNER_PARAM_COST_ENERGY, rclcpp::ParameterValue(coeffs[2]));
-    RCLCPP_INFO(get_logger(), "Coeffs: time: %f, safety: %f, energy: %f", coeffs[0], coeffs[1], coeffs[2]);
+    setRisks(risk_id);
 
     // Main loop
     while (rclcpp::ok())
     {
         if (counter >= nb_of_iterations)
         {
-            //RCLCPP_INFO(get_logger(), "End of the optimal solution per objective tests");
-
-
             risk_id++;
 
             if (risk_id >= risks.size())
-            {
-                RCLCPP_INFO(get_logger(), "End of the risks variation tests");
-
-                publishRisksVariationPaths();
-                //publishMissionRisksPaths();
-                spinOnce();
-
                 return;
-            }
 
             // Set the coefficients parameters
-            coeffs = calculateCoeffs(risks[risk_id], initial_risks[risk_id]);
-            RCLCPP_INFO(get_logger(), "Coeffs: time: %f, safety: %f, energy: %f", coeffs[0], coeffs[1], coeffs[2]);
-            setPlannerParameter(PLANNER_PARAM_COST_TIME, rclcpp::ParameterValue(coeffs[0]));
-            setPlannerParameter(PLANNER_PARAM_COST_SAFETY, rclcpp::ParameterValue(coeffs[1]));
-            setPlannerParameter(PLANNER_PARAM_COST_ENERGY, rclcpp::ParameterValue(coeffs[2]));
+            setRisks(risk_id);
 
             // Sleep
             rclcpp::sleep_for(200ms);
@@ -997,6 +1085,9 @@ void TestbenchNode::nurbsInfosCallback(const arena_msgs::msg::OptimizerPathInfo:
 
     writeParetoFront(*msg);
 
+    if (msg->feasible)
+        feasible_runs_counter_++;
+
     nurbs_infos_counter_++;
 }
 
@@ -1035,7 +1126,10 @@ void TestbenchNode::writePlanningReport(const arena_msgs::msg::OptimizerPathInfo
     formatValue(msg.rrt_range) << "," <<
     formatValue(msg.initialization_time * 1.0e9) << "," << // In nanoseconds like the planning time
     formatValue(msg.optimization_time * 1.0e9) << "," <<
-    msg.nb_of_control_points;
+    msg.nb_of_control_points << "," <<
+    std::count(msg.pareto_front_safe.begin(), msg.pareto_front_safe.end(), true) << "," <<
+    msg.nb_of_feasible_solutions << "," <<
+    msg.nb_of_safe_solutions;
 
     if (msg.path.poses.empty())
     {
@@ -1073,7 +1167,7 @@ void TestbenchNode::writeParetoFront(const arena_msgs::msg::OptimizerPathInfo& m
         return;
     }
 
-    for (size_t i = 0; i < msg.pareto_front_time_costs.size(); i++)
+    auto writeRow = [&](double time_cost, double security_cost, double energy_cost, bool safe, bool in_generated_front)
     {
         pareto_file <<
         nurbs_infos_counter_ << "," <<
@@ -1083,10 +1177,33 @@ void TestbenchNode::writeParetoFront(const arena_msgs::msg::OptimizerPathInfo& m
         formatValue(msg.time_coefficient) << "," <<
         formatValue(msg.security_coefficient) << "," <<
         formatValue(msg.energy_coefficient) << "," <<
-        formatValue(msg.pareto_front_time_costs[i]) << "," <<
-        formatValue(msg.pareto_front_security_costs[i]) << "," <<
-        formatValue(msg.pareto_front_energy_costs[i]) << "," <<
-        formatValue(msg.rrt_range) << std::endl;
+        formatValue(time_cost) << "," <<
+        formatValue(security_cost) << "," <<
+        formatValue(energy_cost) << "," <<
+        formatValue(msg.rrt_range) << "," <<
+        (safe ? 1 : 0) << "," <<
+        (in_generated_front ? 1 : 0) << std::endl;
+    };
+
+    // Front generated by the optimizer (non-dominated feasible solutions), safe or not
+    for (size_t i = 0; i < msg.pareto_front_time_costs.size(); i++)
+    {
+        bool safe = i < msg.pareto_front_safe.size() && msg.pareto_front_safe[i];
+        writeRow(msg.pareto_front_time_costs[i], msg.pareto_front_security_costs[i], msg.pareto_front_energy_costs[i], safe, true);
+    }
+
+    // Safe solutions that are not in the generated front (only dominated by unsafe solutions)
+    for (size_t i = 0; i < msg.safe_front_time_costs.size(); i++)
+    {
+        bool in_generated_front = false;
+        for (size_t j = 0; j < msg.pareto_front_time_costs.size() && !in_generated_front; j++)
+        {
+            in_generated_front = msg.pareto_front_time_costs[j] == msg.safe_front_time_costs[i] &&
+                                 msg.pareto_front_security_costs[j] == msg.safe_front_security_costs[i] &&
+                                 msg.pareto_front_energy_costs[j] == msg.safe_front_energy_costs[i];
+        }
+        if (!in_generated_front)
+            writeRow(msg.safe_front_time_costs[i], msg.safe_front_security_costs[i], msg.safe_front_energy_costs[i], true, false);
     }
 }
 
@@ -1111,6 +1228,7 @@ void TestbenchNode::writeRisksReport(const arena_msgs::msg::OptimizerPathInfo& m
 
     double path_duration = 0.0;
     double avg_closest_obstacle_distance = 0.0;
+    double min_closest_obstacle_distance = std::numeric_limits<double>::max();
     geometry_msgs::msg::Point old_point;
     old_point.x = path_msg.poses[0].pose.position.x;
     old_point.y = path_msg.poses[0].pose.position.y;
@@ -1170,6 +1288,7 @@ void TestbenchNode::writeRisksReport(const arena_msgs::msg::OptimizerPathInfo& m
         octomap::point3d point3d(point.x, point.y, point.z);
         double closest_distance = getClosestObstacleDistance(point3d);
         avg_closest_obstacle_distance += closest_distance;
+        min_closest_obstacle_distance = std::min(min_closest_obstacle_distance, closest_distance);
 
         old_point = point;
     }
@@ -1183,9 +1302,18 @@ void TestbenchNode::writeRisksReport(const arena_msgs::msg::OptimizerPathInfo& m
     path_duration << "," <<
     avg_closest_obstacle_distance << "," <<
     msg.chosen_energy_cost << "," <<
-    0.0 << "," <<
-    0.0 << "," <<
-    0.0 << std::endl;
+    // Risks of the planning in the order of the header: battery, location, wind
+    current_risks_[0] << "," <<
+    current_risks_[2] << "," <<
+    current_risks_[1] << "," <<
+    min_closest_obstacle_distance << "," <<
+    msg.time_coefficient << "," <<
+    msg.security_coefficient << "," <<
+    msg.energy_coefficient << "," <<
+    msg.planning_time * 1.0e9 << "," << // In nanoseconds like the planning report
+    msg.chosen_time_cost << "," <<
+    msg.chosen_security_cost << "," <<
+    msg.chosen_energy_cost << std::endl;
 
     // Close the CSV file
     csv_file.close();
@@ -1512,6 +1640,10 @@ void TestbenchNode::run()
     {
         runRisksVarationTests(rate);
     }
+    else if (risk_sweep_tests_)
+    {
+        runRiskSweepTests(rate);
+    }
     else
     {
         RCLCPP_ERROR(get_logger(), "No tests to run");
@@ -1521,10 +1653,11 @@ void TestbenchNode::run()
 }
 
 TestbenchNode::TestbenchNode()
-: Node("testbench_node"), path_planning_finished_counter_(0), nurbs_infos_counter_(0),
+: Node("testbench_node"), path_planning_finished_counter_(0), nurbs_infos_counter_(0), feasible_runs_counter_(0),
 steps_variation_tests_(false), hyperparameters_variation_tests_(false),
-optimal_solution_per_objective_tests_(false), risks_variation_tests_(false),
-costmap_received_(false), planning_requested_(false), goal_msg_(), costmap_(nullptr)
+optimal_solution_per_objective_tests_(false), risks_variation_tests_(false), risk_sweep_tests_(false),
+costmap_received_(false), planning_requested_(false), goal_msg_(), publish_drone_position_(false), drone_pose_msg_(),
+costmap_(nullptr)
 {
     // Parameters
     this->declare_parameter<std::string>("world_name", "undefined");
@@ -1534,10 +1667,17 @@ costmap_received_(false), planning_requested_(false), goal_msg_(), costmap_(null
     this->declare_parameter<bool>("is_hyperparameter_variation_tests", false);
     this->declare_parameter<bool>("is_optimal_solution_per_objective_tests", false);
     this->declare_parameter<bool>("is_risks_variation_tests", false);
+    this->declare_parameter<bool>("is_risk_sweep_tests", false);
 
     this->declare_parameter<double>("planning_goal.position.x", 30.0);
     this->declare_parameter<double>("planning_goal.position.y", 20.0);
     this->declare_parameter<double>("planning_goal.position.z", 35.0);
+
+    // Start of the planning. Not sent when false: the planner keeps its own default start
+    this->declare_parameter<bool>("drone.publish_position", false);
+    this->declare_parameter<double>("drone.position.x", 0.0);
+    this->declare_parameter<double>("drone.position.y", 0.0);
+    this->declare_parameter<double>("drone.position.z", 0.0);
 
     this->declare_parameter<double>("step_variation_tests.coeff_steps", 0.0);
     this->declare_parameter<double>("step_variation_tests.nb_of_iter", 0.0);
@@ -1547,8 +1687,16 @@ costmap_received_(false), planning_requested_(false), goal_msg_(), costmap_(null
     this->declare_parameter<double>("hyperparameters_variation_tests.hyperparameter_min", 0.0);
     this->declare_parameter<double>("hyperparameters_variation_tests.hyperparameter_max", 0.0);
     this->declare_parameter<double>("hyperparameters_variation_tests.nb_of_iter", 0.0);
+    // Max number of runs of every hyperparameter value to get nb_of_iter feasible ones, <= 0: 3 * nb_of_iter
+    this->declare_parameter<double>("hyperparameters_variation_tests.max_nb_of_runs", 0.0);
 
     this->declare_parameter<double>("optimal_solution_per_objective_tests.nb_of_iter", 0.0);
+
+    // Risk sweep tests: every risk from 0 to 1 by step, optimal_solution_per_objective_tests.nb_of_iter plannings per level
+    this->declare_parameter<double>("risk_sweep_tests.step", 0.1);
+    this->declare_parameter<double>("risk_sweep_tests.initial_coeffs.time", 0.33);
+    this->declare_parameter<double>("risk_sweep_tests.initial_coeffs.safety", 0.33);
+    this->declare_parameter<double>("risk_sweep_tests.initial_coeffs.energy", 0.33);
 
     // Planner hyperparameters kept fixed during the hyperparameters variation tests, -1 keeps the planner's own value
     this->declare_parameter<double>("fixed_hyperparameters.nb_of_generations", -1.0);
@@ -1568,11 +1716,18 @@ costmap_received_(false), planning_requested_(false), goal_msg_(), costmap_(null
     hyperparameters_variation_tests_ = this->get_parameter("is_hyperparameter_variation_tests").as_bool();
     optimal_solution_per_objective_tests_ = this->get_parameter("is_optimal_solution_per_objective_tests").as_bool();
     risks_variation_tests_ = this->get_parameter("is_risks_variation_tests").as_bool();
+    risk_sweep_tests_ = this->get_parameter("is_risk_sweep_tests").as_bool();
 
     goal_msg_.header.frame_id = "map";
     goal_msg_.point.x = this->get_parameter("planning_goal.position.x").as_double();
     goal_msg_.point.y = this->get_parameter("planning_goal.position.y").as_double();
     goal_msg_.point.z = this->get_parameter("planning_goal.position.z").as_double();
+
+    publish_drone_position_ = this->get_parameter("drone.publish_position").as_bool();
+    drone_pose_msg_.header.frame_id = "map";
+    drone_pose_msg_.point.x = this->get_parameter("drone.position.x").as_double();
+    drone_pose_msg_.point.y = this->get_parameter("drone.position.y").as_double();
+    drone_pose_msg_.point.z = this->get_parameter("drone.position.z").as_double();
 
     folder_name_ = this->get_parameter("output_folder").as_string();
     planner_node_name_ = this->get_parameter("planner.node_name").as_string();
@@ -1592,6 +1747,7 @@ costmap_received_(false), planning_requested_(false), goal_msg_(), costmap_(null
     path_planning_finished_counter_pub_ = this->create_publisher<std_msgs::msg::Int32>("/testbench/path_planning_finished_counter", latched_qos);
     planning_activated_pub_ = this->create_publisher<std_msgs::msg::Bool>("/navigation/planning_activated", latched_qos);
     planning_goal_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>("/navigation/goal", latched_qos);
+    drone_pose_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>("/navigation/drone_pose", latched_qos);
     mission_pub_ = this->create_publisher<arena_msgs::msg::Mission>("/interface/mission", latched_qos);
     nurbs_from_risks_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/navigation/nurbs_from_risks", latched_qos);
     risks_variation_paths_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/navigation/risks_variation_paths", latched_qos);

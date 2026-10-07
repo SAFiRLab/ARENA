@@ -120,7 +120,8 @@ std::pair<vector_double, vector_double> linedrone_problem::get_bounds() const
     vector_double lb(m_dim);
     vector_double ub(m_dim);
 
-    lb[0] = 0.0;
+    // NURBS weights in [0.1, 10]: a null weight on a whole span would give a degenerate curve (division by zero)
+    lb[0] = 0.1;
     ub[0] = 10.0;
 
     for (vector_double::size_type i = 1; i < m_dim - 1; i+=5) {
@@ -132,11 +133,11 @@ std::pair<vector_double, vector_double> linedrone_problem::get_bounds() const
         ub[i+2] = m_z_bounds[1];
         lb[i+3] = 0.0;
         ub[i+3] = m_drone_speed;
-        lb[i+4] = 0.0;
+        lb[i+4] = 0.1;
         ub[i+4] = 10.0;
     }
 
-    lb[m_dim - 1] = 0.0;
+    lb[m_dim - 1] = 0.1;
     ub[m_dim - 1] = 10.0;
 
     return {lb, ub};

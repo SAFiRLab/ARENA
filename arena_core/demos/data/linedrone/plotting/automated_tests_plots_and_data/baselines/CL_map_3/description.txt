@@ -1,0 +1,13 @@
+Comparison of ARENA with the benchmark planners on map_test_3 (same planning problem as the CL_map_3 sweeps and reference
+front). One folder per planner with the testbench reports (report_3d_<world>_<date>.csv and *_pareto_front.csv) written by
+scripts/linedrone/automated_tests/ksl_airport_1/baselines/<script>.sh:
+    arena_default/      arena_default.sh       ARENA, default hyperparameters (1000 x 40, delta_RRT 5 m, 50 samples)
+    astar/              astar.sh               A* (MOAR-3D with the weights 1/0/0)
+    moar3d_sweep/       moar3d_sweep.sh        MOAR-3D, weight sweep (66 weight sets, scalarized front)
+    rrt_star_short/     rrt_star_short.sh      RRT*, 0.75 s
+    rrt_star_long/      rrt_star_long.sh       RRT*, 5 s
+    spline_nsga2/       spline_nsga2.sh        Spline NSGA-II of Ahmed and Deb, 1000 x 40
+    moar3d_risk_sweep/  moar3d_risk_sweep.sh   MOAR-3D risk sweep (risks report, data of Fig. 4)
+    arena_risk_sweep/   arena_risk_sweep.sh    ARENA risk sweep (risks report, data of Fig. 4)
+Table: hyperparameter_variations/compare_baselines.py (writes baselines_table.csv/.tex and baselines_table_fig4_metrics.csv
+here). Figures: hyperparameter_variations/plot_computation_analysis.py --baselines "A*=../baselines/CL_map_3/astar" ...

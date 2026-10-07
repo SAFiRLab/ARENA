@@ -191,6 +191,16 @@ public:
      */
     void eval(const Eigen::MatrixXd& a_curve_points, arena_core::EvalNurbsOutput& a_output) final override;
 
+    /**
+     * @brief Steady-state power of the robot moving in a direction, from the quadric surface of the permanent powers.
+     * This is the steady regime of the energy cost, also used by the benchmark planners to compare their paths.
+     *
+     * @param a_unit_velocity Velocity vector divided by the speed (unit direction of the motion).
+     * @param a_descending True if the motion goes down (the smallest root of the quadric is used for the vertical power).
+     * @return The steady-state power in Watts.
+     */
+    double steadyStatePower(const Eigen::Vector3d& a_unit_velocity, bool a_descending) const;
+
 private:
 
     /************* User-defined methods *************/
@@ -210,8 +220,11 @@ private:
      * This method computes the collision cost for the NURBS curve by checking against the environment.
      *
      * @param a_point1 The first point of the NURBS curve segment.
+     * @param a_in_safety_cost False for the start and the goal: they are fixed by the mission, their proximity to the
+     *                         obstacles would set a floor to the safety cost (max term) that no trajectory can lower.
+     *                         Their occupancy is still checked.
      */
-    void evalCollisionCost(const Eigen::Vector3d& a_point1);
+    void evalCollisionCost(const Eigen::Vector3d& a_point1, bool a_in_safety_cost = true);
 
     /**
      * @brief Evaluate the insertion cost based on the NURBS curve and environment.

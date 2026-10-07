@@ -1,0 +1,9 @@
+# RRT* benchmark planner with a long planning time (see rrt_star_params.yaml)
+/**:
+    ros__parameters:
+        rrt_star:
+            time_budget: 5.0                # Planning time of RRT* in s
+        benchmark:
+            nurbs_degree: 5
+            speed: 0.5
+            speed_ramp_length: 0.0

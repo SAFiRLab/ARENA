@@ -18,6 +18,7 @@
             initialization:
                 timeout: 1.0                       # Maximum time for RRT in seconds
                 rrt_range: 5.0                        # Distance between nodes in the RRT
+                initial_speed_ratio: 1.0              # Seed speed of the RRT paths / robot.max_speed (was 0.5 before 2026-10-07)
             sample_size: 50                      # Number of points along a curve
             NSGA-II:
                 population_size: 40                     # Number of individuals in the population

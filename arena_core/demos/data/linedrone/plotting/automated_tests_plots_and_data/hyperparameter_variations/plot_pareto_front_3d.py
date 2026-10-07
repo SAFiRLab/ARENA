@@ -5,6 +5,10 @@ of every run), computes the non-dominated set of their union (the estimated Pare
 objective space (time, safety and energy costs). The fronts of the individual runs are shown in light gray and the
 best observed solution of every objective is highlighted.
 
+Only the safe solutions are used (Safe column of the files written with the safety check of the planner: no segment of the
+trajectory crosses an obstacle), including the safe solutions only dominated by unsafe ones. Files written before the
+safety check have no Safe column, all their solutions are used.
+
 Usage:
     python3 plot_pareto_front_3d.py [pareto front files or folders ...] [--projections] [--color-by energy]
                                     [--view 25 -60] [--output <file prefix>] [--no-runs]
@@ -19,6 +23,7 @@ import sys
 import numpy as np
 from matplotlib import pyplot as plt
 
+from compute_pareto_metrics import is_flag_set
 from plot_computation_analysis import PAPER_STYLE
 
 
@@ -53,10 +58,14 @@ def load_fronts(files):
             rows = list(csv.DictReader(f))
         if rows and OBJECTIVES['time'][0] not in rows[0]:
             sys.exit('{} is not a Pareto front file written by testbench_node'.format(path))
+        nb_of_rows_runs = len(set(row['Id'] for row in rows))
+        nb_of_unsafe = sum(not is_flag_set(row, 'Safe') for row in rows)
+        rows = [row for row in rows if is_flag_set(row, 'Safe')]
         points += [[float(row[column]) for column, _, _ in OBJECTIVES.values()] for row in rows]
         sources += [(os.path.basename(path), row['Id']) for row in rows]
-        nb_of_runs += len(set(row['Id'] for row in rows))
-        print('{}: {} points, {} runs'.format(os.path.basename(path), len(rows), len(set(row['Id'] for row in rows))))
+        nb_of_runs += nb_of_rows_runs
+        print('{}: {} safe points ({} unsafe points excluded), {} runs'.format(os.path.basename(path), len(rows),
+                                                                                nb_of_unsafe, nb_of_rows_runs))
     return np.array(points, dtype=float).reshape(-1, len(OBJECTIVES)), nb_of_runs, sources
 
 

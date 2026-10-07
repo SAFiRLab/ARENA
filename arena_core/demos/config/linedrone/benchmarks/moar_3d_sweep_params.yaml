@@ -1,0 +1,15 @@
+# MOAR-3D benchmark planner in weight sweep mode (see moar_3d_params.yaml): one A* search per weight set of the simplex,
+# the solutions are reported like a Pareto front (scalarization of the multi-objective problem)
+/**:
+    ros__parameters:
+        moar_3d:
+            mode: "weight_sweep"
+            sweep_step: 0.1                 # 66 weight sets
+            grid_resolution: 1.0
+            clearance: 0.8
+            waypoint_spacing: 2.0
+            length_cost: 0.001
+        benchmark:
+            nurbs_degree: 5
+            speed: 0.5
+            speed_ramp_length: 0.0

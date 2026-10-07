@@ -88,21 +88,24 @@ void LinedroneNurbsAnalyzer::evalTimeCost(const double a_distance, const double 
         linedrone_output_.time_output_ += a_distance / a_velocity; // Normal case
 }
 
-void LinedroneNurbsAnalyzer::evalCollisionCost(const Eigen::Vector3d& a_point1)
+void LinedroneNurbsAnalyzer::evalCollisionCost(const Eigen::Vector3d& a_point1, bool a_in_safety_cost)
 {
     auto capability = costmap_mapping_->getCapability<arena_demos::CostSDFCapability>();
     if (capability)
     {
-        double node_collision_cost = capability->getCollisionCost(a_point1);
-        linedrone_output_.total_collision_cost_ += node_collision_cost;
-        if (node_collision_cost > linedrone_output_.max_collision_cost_)
-            linedrone_output_.max_collision_cost_ = node_collision_cost;
-        
+        if (a_in_safety_cost)
+        {
+            double node_collision_cost = capability->getCollisionCost(a_point1);
+            linedrone_output_.total_collision_cost_ += node_collision_cost;
+            if (node_collision_cost > linedrone_output_.max_collision_cost_)
+                linedrone_output_.max_collision_cost_ = node_collision_cost;
+
+            linedrone_output_.nb_of_collision_checks_++;
+        }
+
         double occupancy = capability->getOccupancy(a_point1);
         if (occupancy > linedrone_output_.max_occupancy_)
             linedrone_output_.max_occupancy_ = occupancy;
-
-        linedrone_output_.nb_of_collision_checks_++;
     }
     else
         std::cerr << "CostmapMapping cannot provide CostSDFCapability, collision cost evaluation is skipped." << std::endl;
@@ -125,25 +128,7 @@ void LinedroneNurbsAnalyzer::evalEnergyCost(const Eigen::Vector3d& a_point_i_m_1
 
     // ------------- Steady regime ------------- //
     const double velocity_i_p_1_safe = (std::abs(a_velocity_i_p1) > 1e-6) ? a_velocity_i_p1 : 1e-6;
-    double roll_power = (velocity_i_vector.x() / velocity_i_p_1_safe) * linedrone_config.robot_permanent_power_roll_;
-    double pitch_power = (velocity_i_vector.y() / velocity_i_p_1_safe) * linedrone_config.robot_permanent_power_pitch_;
-
-    double linedrone_coeff_F_squared = linedrone_config.F * linedrone_config.F;
-    double sqrt_discriminant = sqrt(linedrone_coeff_F_squared - 4.0 * linedrone_config.C * 
-                               (1 + linedrone_config.A * (roll_power * roll_power) + linedrone_config.B * (pitch_power * pitch_power)));
-    double denominator = 2.0 * linedrone_config.C;
-    double z1_power = (-linedrone_config.F + sqrt_discriminant) / denominator;
-    double z2_power = (-linedrone_config.F - sqrt_discriminant) / denominator;
-
-    double z_power = 0.0;
-    if ((a_point_i_p1 - a_point_i)[2] < 0.0)
-    {
-        z_power = std::min(fabs(z1_power), fabs(z2_power)); // Choose the minimum power for downward motion
-    }
-    else
-        z_power = std::max(fabs(z1_power), fabs(z2_power)); // Choose the maximum power for upward motion
-
-    double total_steady_power = Eigen::Vector3d(roll_power, pitch_power, z_power).norm();
+    double total_steady_power = steadyStatePower(velocity_i_vector / velocity_i_p_1_safe, (a_point_i_p1 - a_point_i)[2] < 0.0);
 
     double velocity_i_safe = (std::abs(a_velocity_i) > 1e-6) ? a_velocity_i : velocity_i_p_1_safe; // Prevent division by zero or very small velocity
     double steady_energy = total_steady_power * displacement_i.norm() / velocity_i_safe; // Normal case
@@ -155,6 +140,29 @@ void LinedroneNurbsAnalyzer::evalEnergyCost(const Eigen::Vector3d& a_point_i_m_1
         linedrone_output_.max_energy_ = total_energy;
 
     linedrone_output_.total_energy_ += total_energy;
+}
+
+double LinedroneNurbsAnalyzer::steadyStatePower(const Eigen::Vector3d& a_unit_velocity, bool a_descending) const
+{
+    double roll_power = a_unit_velocity.x() * linedrone_config.robot_permanent_power_roll_;
+    double pitch_power = a_unit_velocity.y() * linedrone_config.robot_permanent_power_pitch_;
+
+    double linedrone_coeff_F_squared = linedrone_config.F * linedrone_config.F;
+    double sqrt_discriminant = sqrt(linedrone_coeff_F_squared - 4.0 * linedrone_config.C *
+                               (1 + linedrone_config.A * (roll_power * roll_power) + linedrone_config.B * (pitch_power * pitch_power)));
+    double denominator = 2.0 * linedrone_config.C;
+    double z1_power = (-linedrone_config.F + sqrt_discriminant) / denominator;
+    double z2_power = (-linedrone_config.F - sqrt_discriminant) / denominator;
+
+    double z_power = 0.0;
+    if (a_descending)
+    {
+        z_power = std::min(fabs(z1_power), fabs(z2_power)); // Choose the minimum power for downward motion
+    }
+    else
+        z_power = std::max(fabs(z1_power), fabs(z2_power)); // Choose the maximum power for upward motion
+
+    return Eigen::Vector3d(roll_power, pitch_power, z_power).norm();
 }
 
 void LinedroneNurbsAnalyzer::evalAccelerationConstraint(const Eigen::Vector3d& a_point_i_m_1, const Eigen::Vector3d& a_point_i, 
@@ -218,8 +226,8 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
         double velocity_DUA_i = (velocity_i + velocity_i_p1) / 2.0; // Assuming the 4th column is velocity
         evalTimeCost(distance, velocity_DUA_i);
 
-        // Evaluate collision cost between point1 and point2
-        evalCollisionCost(point1);
+        // Evaluate collision cost between point1 and point2 (the start, sample 0, isn't part of the safety cost)
+        evalCollisionCost(point1, i > 0);
 
         // Evaluate insertion cost (if needed, currently not implemented)
         //if (!obbs_.empty())
@@ -286,7 +294,8 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
 
     Eigen::Map<const Eigen::Vector3d> last_point(a_curve_points.col(linedrone_config.base_config.sample_size - 1).data());
 
-    evalCollisionCost(last_point);
+    // The goal isn't part of the safety cost, only its occupancy is checked
+    evalCollisionCost(last_point, false);
 
     // if (!obbs_.empty())
     //    evalInsertionCost(last_point); // Placeholder for insertion cost evaluation

@@ -1,10 +1,15 @@
 #!/bin/bash
 # Estimated optimal (reference) Pareto front of the 3 objectives (time, safety, energy).
 #
-# The planner is run num_iter times with over-designed hyperparameters. Every run writes the whole non-dominated front
-# of its final population (3 objectives) in report_3d_reference_<date>_pareto_front.csv, one row per solution with the
-# run Id. The estimated Pareto front is the non-dominated set of the union of all these fronts, rebuilt by
-# plot_pareto_front_3d.py (also saved as CSV), compute_pareto_metrics.py and plot_computation_analysis.py.
+# The planner is run with over-designed hyperparameters until num_iter runs have found a safe trajectory. Every run
+# writes the whole non-dominated front of its final population (3 objectives) in
+# report_3d_reference_<date>_pareto_front.csv, one row per solution with the run Id, and the safety of every solution
+# (Safe: no segment of the trajectory crosses an obstacle, checked by the planner on its whole final population). The
+# file also has the safe solutions only dominated by unsafe ones (In generated front = 0). The estimated Pareto front
+# is the non-dominated set of the union of the safe solutions of all the runs, rebuilt by plot_pareto_front_3d.py (also
+# saved as CSV), compute_pareto_metrics.py and plot_computation_analysis.py.
+# The runs without safe trajectory are kept in the reports (Feasible = 0). The testbench stops after 3 x num_iter runs
+# if num_iter feasible runs can't be reached (testbench_launch.py argument hyperparameter_max_nb_of_runs).
 # The cost weights only select the trajectory reported as chosen in the main report (report_3d_reference_<date>.csv),
 # they don't change the optimization nor the fronts.
 #

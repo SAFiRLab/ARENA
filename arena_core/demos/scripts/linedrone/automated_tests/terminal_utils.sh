@@ -33,6 +33,10 @@ TESTBENCH_PROCESS_PATTERNS=(
     "lib/arena_core/[c]ostmap_3D_node"
     "lib/arena_core/[t]estbench_node"
     "lib/arena_core/[l]inedrone_test_node"
+    "bin/[r]os2 launch arena_core benchmark_planner_launch.py"
+    "lib/arena_core/[m]oar_3d_node"
+    "lib/arena_core/[r]rt_star_node"
+    "lib/arena_core/[s]pline_nsga2_node"
 )
 
 # Usage: run_in_terminal <title> <command>

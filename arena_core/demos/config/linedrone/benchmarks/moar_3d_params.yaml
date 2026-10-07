@@ -1,0 +1,17 @@
+# MOAR-3D benchmark planner (nodes/testbench/benchmarks/moar_3d), weighted A* on a 3D grid.
+# The robot parameters, the sample size and the cost weights are the ones of ARENA (linedrone_problem_params.yaml),
+# the testbench can change the sample size and the cost weights.
+/**:
+    ros__parameters:
+        moar_3d:
+            mode: "single"                  # single: weights of optimization.adaptive_costs_weights (A* with 1/0/0)
+                                            # weight_sweep: one search per weight set of the simplex
+            sweep_step: 0.1                 # Step of the weights in weight_sweep mode (0.1: 66 weight sets)
+            grid_resolution: 1.0            # Size of the grid cells in m (resolution of the octomaps of the tests)
+            clearance: 0.8                  # Valid cells: same clearance as the RRT of ARENA (OMPLStateValidityChecker)
+            waypoint_spacing: 2.0           # Distance between the control points taken on the path, in m
+            length_cost: 0.001              # Small cost per meter, null weights don't make detours
+        benchmark:
+            nurbs_degree: 5                 # Same NURBS degree as ARENA
+            speed: 0.5                      # Speed at the control points (robot.max_speed)
+            speed_ramp_length: 0.0          # > 0: the speed grows over this distance after the start and before the goal

@@ -37,6 +37,13 @@ set(ARENA_DEMOS_LINEDRONE_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/linedrone/costmap_mapping.cpp
 )
 
+set(ARENA_DEMOS_MAP_GENERATOR_SRCS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/linedrone/map_generator/random.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/linedrone/map_generator/shapes.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/linedrone/map_generator/map_generator_config.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/linedrone/map_generator/map_generator.cpp
+)
+
 set(ARENA_DEMOS_HUSKY_SRCS
     ${ARENA_DEMOS_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/husky/husky_problem.cpp
