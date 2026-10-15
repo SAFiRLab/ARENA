@@ -36,14 +36,18 @@
 #include "octomap_msgs/conversions.h"
 
 // Local
-#include "arena_core/math/algorithm/adaptive_voting_algorithm.h"
+#include "arena_core/math/algorithm/voting_algorithm.h"
 
 // External Libraries
 // Pagmo
 #include <pagmo/utils/multi_objective.hpp>
 
 // System
+#include <algorithm>
+#include <cmath>
 #include <limits>
+#include <iomanip>
+#include <fstream>
 
 
 using namespace std::chrono_literals;
@@ -92,11 +96,43 @@ BenchmarkPlannerNode::BenchmarkPlannerNode(const std::string& a_name, const rclc
     run_timer_ = this->create_wall_timer(20ms, std::bind(&BenchmarkPlannerNode::run, this));
 }
 
-std::vector<double> BenchmarkPlannerNode::getCostsWeights()
+arena_core::ObjectiveCoefficients BenchmarkPlannerNode::getCostsWeights()
+{
+    if (!votingUsesRisks())
+        return getFixedCoefficients();
+    return arena_core::createVotingAlgorithm(getVotingSettings())->computeCoefficients(getOperationalRisks());
+}
+
+bool BenchmarkPlannerNode::votingUsesRisks()
+{
+    return param<bool>("optimization.voting.use_risks", false);
+}
+
+arena_core::OperationalRisks BenchmarkPlannerNode::getOperationalRisks()
+{
+    auto risk = [this](const std::string& name)
+    { return std::clamp(param<double>("optimization.voting.risks." + name, 0.0), 0.0, 1.0); };
+    return {risk("wind"), risk("communication"), risk("localization"), risk("battery")};
+}
+
+arena_core::ObjectiveCoefficients BenchmarkPlannerNode::getFixedCoefficients()
 {
     return {param<double>("optimization.adaptive_costs_weights.time", 1.0),
             param<double>("optimization.adaptive_costs_weights.safety", 0.0),
             param<double>("optimization.adaptive_costs_weights.energy", 0.0)};
+}
+
+arena_core::VotingAlgorithmSettings BenchmarkPlannerNode::getVotingSettings()
+{
+    arena_core::VotingAlgorithmSettings settings;
+    settings.type = arena_core::votingAlgorithmTypeFromString(param<std::string>("optimization.voting.algorithm",
+                                                                                 "risk_weighted_tchebycheff"));
+    settings.nominal_coefficients = {param<double>("optimization.voting.nominal_coefficients.time", 1.0 / 3.0),
+                                     param<double>("optimization.voting.nominal_coefficients.safety", 1.0 / 3.0),
+                                     param<double>("optimization.voting.nominal_coefficients.energy", 1.0 / 3.0)};
+    settings.gain = param<double>("optimization.voting.risk_weighted_tchebycheff.gain", settings.gain);
+    settings.augmentation = param<double>("optimization.voting.risk_weighted_tchebycheff.augmentation", settings.augmentation);
+    return settings;
 }
 
 void BenchmarkPlannerNode::updateScorer()
@@ -109,6 +145,102 @@ void BenchmarkPlannerNode::updateScorer()
 
     linedrone_config_.base_config.sample_size = sample_size;
     scorer_ = std::make_shared<BaselinePathScorer>(costmap_mapping_, linedrone_config_, degree);
+}
+
+void BenchmarkPlannerNode::updateEvaluation()
+{
+    // Sample size of the costs reported to the testbench, 0: the costs of the planner
+    unsigned int evaluation_sample_size = static_cast<unsigned int>(std::max<int64_t>(param<int64_t>("optimization.evaluation_sample_size", 0), 0));
+    if (evaluation_sample_size == evaluation_sample_size_)
+        return;
+
+    evaluation_sample_size_ = evaluation_sample_size;
+    evaluation_analyzer_ = nullptr;
+    if (evaluation_sample_size_ == 0)
+        return;
+
+    arena_demos::LinedroneNurbsAnalyzerConfig evaluation_config = linedrone_config_;
+    evaluation_config.base_config.sample_size = evaluation_sample_size_;
+    evaluation_analyzer_ = std::make_shared<arena_demos::LinedroneNurbsAnalyzer>(costmap_mapping_, evaluation_config,
+                                                                               std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>{});
+    RCLCPP_INFO(get_logger(), "The costs of the reported solutions are evaluated with %u samples", evaluation_sample_size_);
+}
+
+void BenchmarkPlannerNode::evaluateForReport(PlanningResult& a_result)
+{
+    if (!evaluation_analyzer_)
+        return;
+
+    auto start_time = std::chrono::steady_clock::now();
+    arena_core::EvalNurbsOutput output;
+    output.fitness_size_ = 3;
+    output.fitness_array_ = std::vector<double>(output.fitness_size_, std::numeric_limits<double>::max());
+    output.constraint_size_ = 2;
+    output.constraint_array_ = std::vector<double>(output.constraint_size_, std::numeric_limits<double>::max());
+
+    for (ScoredPath& solution : a_result.solutions)
+    {
+        // The trajectories evaluated as they are (scoreTrajectory) already have their reported costs
+        if (solution.native || !solution.feasible || solution.samples.cols() < 2 ||
+            solution.samples.cols() >= static_cast<int>(evaluation_sample_size_))
+            continue;
+
+        // The acceleration of the interpolated trajectory is meaningless at the corners of the polyline, the segments
+        // between the samples are checked for collisions by the safety check of the scorer
+        solution.samples = BaselinePathScorer::interpolateTrajectory(solution.samples, static_cast<int>(evaluation_sample_size_));
+        evaluation_analyzer_->eval(solution.samples, output);
+        solution.fitness = output.fitness_array_;
+    }
+    evaluation_time_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
+}
+
+ScoredPath BenchmarkPlannerNode::scoreTrajectory(const NativeTrajectory& a_trajectory, bool a_check_dynamics)
+{
+    auto start_time = std::chrono::steady_clock::now();
+    int nb_of_samples;
+    const double spacing = costmap_mapping_->evaluationSpacing(param<double>("optimization.evaluation_spacing", 0.0));
+    if (spacing > 0.0)
+    {
+        // Samples at the given spacing along the path (half the octomap resolution by default)
+        nb_of_samples = std::max(3, static_cast<int>(std::ceil(trajectoryLength(a_trajectory) / spacing)) + 1);
+    }
+    else
+    {
+        int64_t evaluation_sample_size = param<int64_t>("optimization.evaluation_sample_size", 0);
+        nb_of_samples = static_cast<int>(param<int64_t>("benchmark.evaluation_samples", evaluation_sample_size > 0 ? evaluation_sample_size : 250));
+    }
+    ScoredPath scored = scorer().scoreTrajectory(a_trajectory, a_check_dynamics, nb_of_samples);
+    scoring_time_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
+    return scored;
+}
+
+void BenchmarkPlannerNode::writeStatus(const PlanningResult& a_result, int a_chosen_idx)
+{
+    const std::string status_file = param<std::string>("benchmark.status_file", "");
+    if (status_file.empty())
+        return;
+
+    int nb_of_constrained = 0, nb_of_safe = 0, nb_of_valid = 0, nb_of_physical = 0;
+    double min_acceleration = std::numeric_limits<double>::infinity();
+    for (const ScoredPath& solution : a_result.solutions)
+    {
+        nb_of_constrained += solution.feasible;
+        nb_of_safe += solution.safe;
+        nb_of_valid += solution.feasible && solution.safe;
+        nb_of_physical += solution.physically_feasible && solution.safe;
+        min_acceleration = std::min(min_acceleration, solution.max_acceleration);
+    }
+    const bool chosen_physical = a_chosen_idx >= 0 && a_result.solutions[a_chosen_idx].physically_feasible;
+
+    bool new_file = !std::ifstream(status_file).good();
+    std::ofstream file(status_file, std::ios::out | std::ios::app);
+    if (new_file)
+        file << "Planning,Completed,Solutions,Constraints respected,Safe,Feasible and safe,Chosen,Planner time,"
+                "Physically feasible and safe,Chosen physically feasible,Min max acceleration\n";
+    file << status_counter_++ << "," << !a_result.solutions.empty() << "," << a_result.solutions.size() << ","
+         << nb_of_constrained << "," << nb_of_safe << "," << nb_of_valid << "," << (a_chosen_idx >= 0) << ","
+         << std::fixed << std::setprecision(6) << a_result.initialization_time + a_result.optimization_time << ","
+         << nb_of_physical << "," << chosen_physical << "," << min_acceleration << "\n";
 }
 
 void BenchmarkPlannerNode::goalPoseCallback(const geometry_msgs::msg::PointStamped::SharedPtr a_msg)
@@ -165,7 +297,10 @@ void BenchmarkPlannerNode::run()
         return;
 
     planning_start_time_ = std::chrono::steady_clock::now();
+    evaluation_time_ = 0.0;
+    scoring_time_ = 0.0;
     updateScorer();
+    updateEvaluation();
 
     PlanningResult result;
     try
@@ -194,7 +329,17 @@ void BenchmarkPlannerNode::run()
     if (safe_indexes.size() == 1)
         chosen_idx = static_cast<int>(safe_indexes[0]);
     else if (safe_indexes.size() > 1)
-        chosen_idx = static_cast<int>(safe_indexes[arena_core::adaptive_voting_algorithm::getBetterCandidateIndex(safe_fitness, getCostsWeights())]);
+    {
+        // Same voting algorithm as ARENA (optimization.voting)
+        const int voted_idx = arena_core::createVotingAlgorithm(getVotingSettings())->selectCandidate(safe_fitness, getCostsWeights());
+        chosen_idx = static_cast<int>(safe_indexes[voted_idx]);
+    }
+
+    // End of the planning: the publications, the evaluation of the reported costs and the exports aren't part of it
+    planning_end_time_ = std::chrono::steady_clock::now();
+
+    // Costs used by the voting, kept for optimization.export_solutions_file (the reported costs are evaluated below)
+    std::vector<std::vector<double>> vote_fitness = safe_fitness;
 
     RCLCPP_INFO(get_logger(), "Planning done: %zu solutions, %zu feasible and safe, %s", result.solutions.size(),
                 safe_indexes.size(), chosen_idx >= 0 ? "a trajectory is chosen" : "no trajectory");
@@ -203,6 +348,40 @@ void BenchmarkPlannerNode::run()
     goal_sent_ = false;
 
     publishPaths(result, chosen_idx);
+
+    // The costs and the chosen trajectory reported to the testbench with optimization.evaluation_sample_size samples
+    evaluateForReport(result);
+
+    // optimization.export_solutions_file (analysis only): every feasible and safe solution with the costs used by the voting,
+    // the reported costs and the clearance of its reported trajectory (evaluation sample size), like LinedroneTestNode
+    const std::string export_file = param<std::string>("optimization.export_solutions_file", "");
+    if (!export_file.empty())
+    {
+        bool new_file = !std::ifstream(export_file).good();
+        std::ofstream file(export_file, std::ios::out | std::ios::app);
+        if (new_file)
+            file << "Planning,Solution,Vote time cost,Vote security cost,Vote energy cost,Time cost,Security cost,Energy cost,"
+                    "Average Closest Obstacle Distance,Min Closest Obstacle Distance\n";
+        for (size_t k = 0; k < safe_indexes.size(); ++k)
+        {
+            const ScoredPath& solution = result.solutions[safe_indexes[k]];
+            double sum = 0.0, min_distance = std::numeric_limits<double>::max();
+            for (int c = 0; c < solution.samples.cols(); ++c)
+            {
+                double d = costmap_mapping_->closestObstacleDistance(solution.samples.block<3, 1>(0, c));
+                sum += d;
+                min_distance = std::min(min_distance, d);
+            }
+            file << std::fixed << std::setprecision(6) << export_counter_ << "," << safe_indexes[k] << ","
+                 << vote_fitness[k][0] << "," << vote_fitness[k][1] << "," << vote_fitness[k][2] << ","
+                 << solution.fitness[0] << "," << solution.fitness[1] << "," << solution.fitness[2] << ","
+                 << sum / solution.samples.cols() << "," << min_distance << "\n";
+        }
+        RCLCPP_INFO(get_logger(), "%zu safe solutions exported to %s", safe_indexes.size(), export_file.c_str());
+        export_counter_++;
+    }
+
+    writeStatus(result, chosen_idx);
     publishPlanningInfos(result, chosen_idx);
 }
 
@@ -247,7 +426,10 @@ void BenchmarkPlannerNode::publishPlanningInfos(const PlanningResult& a_result, 
         }
     }
 
-    infos_msg.planning_time = std::chrono::duration<double>(std::chrono::steady_clock::now() - planning_start_time_).count();
+    // Planning time: from the activation to the choice of the trajectory, without the evaluation of the trajectories
+    infos_msg.planning_time = std::chrono::duration<double>(planning_end_time_ - planning_start_time_).count() - scoring_time_;
+    RCLCPP_INFO(get_logger(), "Planning time %.1f ms, evaluation of the trajectories %.1f ms (not in the planning time)",
+                infos_msg.planning_time * 1.0e3, (scoring_time_ + evaluation_time_) * 1.0e3);
     infos_msg.initialization_time = a_result.initialization_time;
     infos_msg.optimization_time = a_result.optimization_time;
     infos_msg.nb_of_control_points = a_result.nb_of_control_points;
@@ -279,7 +461,7 @@ void BenchmarkPlannerNode::publishPlanningInfos(const PlanningResult& a_result, 
     infos_msg.chosen_security_cost = feasible ? feasible_fitness[chosen_feasible_idx][1] : max_cost;
     infos_msg.chosen_energy_cost = feasible ? feasible_fitness[chosen_feasible_idx][2] : max_cost;
 
-    std::vector<double> weights = getCostsWeights();
+    const arena_core::ObjectiveCoefficients weights = getCostsWeights();
     infos_msg.time_coefficient = weights[0];
     infos_msg.security_coefficient = weights[1];
     infos_msg.energy_coefficient = weights[2];

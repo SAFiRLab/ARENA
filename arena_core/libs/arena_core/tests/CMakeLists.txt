@@ -9,6 +9,9 @@ if(ENABLE_TESTING)
 
     ament_add_gtest(tests_nurbs tests_nurbs.cpp)
     target_link_libraries(tests_nurbs ${PROJECT_NAME}_arena_core)
+
+    ament_add_gtest(tests_voting_algorithm tests_voting_algorithm.cpp)
+    target_link_libraries(tests_voting_algorithm ${PROJECT_NAME}_arena_core)
     
 endif()
 

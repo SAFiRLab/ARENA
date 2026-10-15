@@ -14,6 +14,10 @@ hyperparameter_min=11
 hyperparameter_max=251
 num_iter=10
 
+# The costs of the reported solutions are evaluated with evaluation_sample_size samples (linear interpolation of the
+# samples of the planner), the sample size of the reference fronts, so that the fronts of every setting are comparable
+evaluation_sample_size=250
+
 run_in_terminal "costmap_3D" "ros2 launch arena_core costmap_3D_launch.py"
 
 # The testbench starts and restarts the planner by itself
@@ -27,6 +31,7 @@ run_in_terminal "testbench" "ros2 launch arena_core testbench_launch.py \
     hyperparameter_min:=${hyperparameter_min} \
     hyperparameter_max:=${hyperparameter_max} \
     hyperparameter_steps:=${hyperparameter_steps} \
-    hyperparameter_nb_of_iter:=${num_iter}"
+    hyperparameter_nb_of_iter:=${num_iter} \
+    evaluation_sample_size:=${evaluation_sample_size}"
 
 follow_testbench_nodes

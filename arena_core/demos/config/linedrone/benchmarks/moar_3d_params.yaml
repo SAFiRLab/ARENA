@@ -1,17 +1,20 @@
-# MOAR-3D benchmark planner (nodes/testbench/benchmarks/moar_3d), weighted A* on a 3D grid.
-# The robot parameters, the sample size and the cost weights are the ones of ARENA (linedrone_problem_params.yaml),
-# the testbench can change the sample size and the cost weights.
+# MOAR-3D benchmark planner (nodes/testbench/benchmarks/moar_3d, mode moar): MOAR planner (Petit and Desbiens, ICRA 2024)
+# extended to 3D. Its coefficients k_T, k_S, k_E are optimization.adaptive_costs_weights.{time, safety, energy}, set by
+# the testbench (Eq. 9 of MOAR = Eq. 11 of ARENA in the risk tests). The robot parameters and the sample size are the ones
+# of ARENA (linedrone_problem_params.yaml).
 /**:
     ros__parameters:
         moar_3d:
-            mode: "single"                  # single: weights of optimization.adaptive_costs_weights (A* with 1/0/0)
-                                            # weight_sweep: one search per weight set of the simplex
-            sweep_step: 0.1                 # Step of the weights in weight_sweep mode (0.1: 66 weight sets)
+            mode: "moar"
             grid_resolution: 1.0            # Size of the grid cells in m (resolution of the octomaps of the tests)
             clearance: 0.8                  # Valid cells: same clearance as the RRT of ARENA (OMPLStateValidityChecker)
-            waypoint_spacing: 2.0           # Distance between the control points taken on the path, in m
-            length_cost: 0.001              # Small cost per meter, null weights don't make detours
-        benchmark:
-            nurbs_degree: 5                 # Same NURBS degree as ARENA
-            speed: 0.5                      # Speed at the control points (robot.max_speed)
-            speed_ramp_length: 0.0          # > 0: the speed grows over this distance after the start and before the goal
+            sdf_min_distance: 2.0           # d_min and d_max of the collision cost C(d) of the SDF octomap
+            sdf_max_distance: 9.0           # (costmap_3D_params.yaml obstacle_influence_distance)
+            speeds:                         # Speeds of the MOAR implementation relative to the horizontal cruising speed
+                min_ratio: 0.8333           # v_MIN = 0.5 / 0.6
+                up_ratio: 0.9667            # 0.58 / 0.6
+                diagonal_up_ratio: 0.95     # 0.57 / 0.6
+                diagonal_down_ratio: 0.9667 # 0.58 / 0.6
+                down_ratio: 0.95            # 0.57 / 0.6
+                d_min: 2.0                  # v_sat = v_MIN below this obstacle distance (m)
+                d_max: 4.0                  # v_sat = v_MAX above this obstacle distance (m, d_max_speed of MOAR)

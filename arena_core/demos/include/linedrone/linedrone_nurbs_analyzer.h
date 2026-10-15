@@ -62,6 +62,12 @@ struct LinedroneNurbsAnalyzerConfig
 
     double robot_max_speed_; // Maximum speed of the robot in m/s
     double robot_max_acceleration_; // Maximum acceleration of the robot in m/s^2
+    double max_occupancy_ = 0.5;    // Occupancy constraint: maximum occupancy of the SDF octomap at the samples
+
+    // eval() stops at the first sample violating a constraint (acceleration above robot_max_acceleration_ or occupancy
+    // above max_occupancy_) and returns the max double for every cost, the rejection of the optimizer. Off by default:
+    // the costs of the reports are evaluated without this rejection.
+    bool early_exit_on_constraint_violation_ = false;
 
     // Robot power consumption in steady state (in Watts)
     double robot_permanent_power_roll_;
@@ -223,8 +229,9 @@ private:
      * @param a_in_safety_cost False for the start and the goal: they are fixed by the mission, their proximity to the
      *                         obstacles would set a floor to the safety cost (max term) that no trajectory can lower.
      *                         Their occupancy is still checked.
+     * @return True if the occupancy at the point respects the occupancy constraint (at most max_occupancy_).
      */
-    void evalCollisionCost(const Eigen::Vector3d& a_point1, bool a_in_safety_cost = true);
+    bool evalCollisionCost(const Eigen::Vector3d& a_point1, bool a_in_safety_cost = true);
 
     /**
      * @brief Evaluate the insertion cost based on the NURBS curve and environment.
@@ -253,11 +260,18 @@ private:
      * @param a_velocity_i The velocity at the current point in the NURBS curve.
      * @param a_velocity_i_p_1 The velocity at the first point after the current point in the NURBS curve.
      * @param a_velocity_i_p_2 The velocity at the second point after the current point in the NURBS curve
+     * @return True if the acceleration at the point respects the acceleration constraint (at most robot_max_acceleration_).
      */
-    void evalAccelerationConstraint(const Eigen::Vector3d& a_point_i_m_1, const Eigen::Vector3d& a_point_i, 
+    bool evalAccelerationConstraint(const Eigen::Vector3d& a_point_i_m_1, const Eigen::Vector3d& a_point_i, 
                                     const Eigen::Vector3d& a_point_i_p_1, const Eigen::Vector3d& a_point_i_p_2,
                                     const Eigen::Vector3d& a_point_i_p_3, const double a_velocity_i_m_1,
                                     const double a_velocity_i, const double a_velocity_i_p_1, const double a_velocity_i_p_2);
+
+    /**
+     * @brief Rejection at the first constraint violation (early_exit_on_constraint_violation_): every cost is the max
+     * double, the constraints are their values so far (above their limit), the accumulated outputs are reset.
+     */
+    void rejectEvaluation(arena_core::EvalNurbsOutput& a_output);
 
     /************* User-defined attributes *************/
     std::shared_ptr<arena_demos::CostmapMapping> costmap_mapping_; // Pointer to the costmap mapping for collision checks

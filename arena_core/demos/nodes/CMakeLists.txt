@@ -20,7 +20,9 @@ ament_target_dependencies(nurbs_test_node
     grid_map_core
 )
 
-add_executable(linedrone_test_node linedrone/linedrone_test_node.cpp ${ARENA_DEMOS_LINEDRONE_SRCS})
+add_executable(linedrone_test_node linedrone/linedrone_test_node.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/moar_3d/weighted_astar_3d.cpp
+    ${ARENA_DEMOS_LINEDRONE_SRCS})
 target_link_libraries(linedrone_test_node ${PROJECT_NAME}_arena_core ${OCTOMAP_LIBRARIES} yaml-cpp)
 ament_target_dependencies(linedrone_test_node 
     rclcpp 
@@ -39,17 +41,42 @@ ament_target_dependencies(linedrone_test_node
 set(ARENA_BENCHMARKS_COMMON_SRCS
     ${ARENA_DEMOS_LINEDRONE_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/common/baseline_path_scorer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/common/native_trajectory.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/testbench/benchmarks/common/benchmark_planner_node.cpp
 )
 
-set(ARENA_BENCHMARKS_TARGETS moar_3d_node rrt_star_node spline_nsga2_node)
+set(ARENA_BENCHMARKS_TARGETS moar_3d_node rrt_star_node spline_nsga2_node apex_node po_rrt_star_node kino_astar_node
+    kino_rrt_star_node)
 add_executable(moar_3d_node
     testbench/benchmarks/moar_3d/moar_3d_node.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/moar_3d/weighted_astar_3d.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/moar_3d/moar_graph_search.cpp
     ${ARENA_BENCHMARKS_COMMON_SRCS}
 )
 add_executable(rrt_star_node testbench/benchmarks/rrt_star/rrt_star_node.cpp ${ARENA_BENCHMARKS_COMMON_SRCS})
 add_executable(spline_nsga2_node testbench/benchmarks/spline_nsga2/spline_nsga2_node.cpp ${ARENA_BENCHMARKS_COMMON_SRCS})
+add_executable(apex_node
+    testbench/benchmarks/apex/apex_node.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/moar_3d/moar_graph_search.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/toa_star/toa_star_search.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/apex/apex_search.cpp
+    ${ARENA_BENCHMARKS_COMMON_SRCS}
+)
+add_executable(po_rrt_star_node
+    testbench/benchmarks/po_rrt_star/po_rrt_star_node.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/po_rrt_star/po_rrt_star.cpp
+    ${ARENA_BENCHMARKS_COMMON_SRCS}
+)
+add_executable(kino_astar_node
+    testbench/benchmarks/kino_astar/kino_astar_node.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/kino_astar/kinodynamic_astar.cpp
+    ${ARENA_BENCHMARKS_COMMON_SRCS}
+)
+add_executable(kino_rrt_star_node
+    testbench/benchmarks/kino_rrt_star/kino_rrt_star_node.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/kino_rrt_star/kinodynamic_rrt_star.cpp
+    ${ARENA_BENCHMARKS_COMMON_SRCS}
+)
 
 foreach(target ${ARENA_BENCHMARKS_TARGETS})
     target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/testbench/benchmarks)

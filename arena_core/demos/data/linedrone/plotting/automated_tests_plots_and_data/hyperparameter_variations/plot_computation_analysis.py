@@ -92,7 +92,8 @@ NB_OF_MARKERS = 10  # Markers per curve, the sweeps have up to ~100 settings
 FIGURE_SIZE = (3.5, 2.6)
 
 # Benchmark planners: (color, marker), in the order of --baselines
-BASELINE_STYLES = [('black', 'o'), ('dimgray', 's'), ('gray', '^'), ('darkgray', 'D'), ('silver', 'v'), ('black', 'x')]
+BASELINE_STYLES = [('black', 'o'), ('dimgray', 's'), ('gray', '^'), ('darkgray', 'D'), ('silver', 'v'), ('black', 'x'),
+                   ('dimgray', 'P'), ('gray', '*')]
 BASELINE_LINE_WIDTH = 0.9
 BASELINE_STD_ALPHA = 0.12
 NB_OF_BASELINE_MARKERS = 5

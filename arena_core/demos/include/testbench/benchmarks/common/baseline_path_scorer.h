@@ -37,6 +37,7 @@
 #include "arena_core/math/control_point.h"
 #include "linedrone/linedrone_nurbs_analyzer.h"
 #include "linedrone/costmap_mapping.h"
+#include "testbench/benchmarks/common/native_trajectory.h"
 
 // System
 #include <limits>
@@ -63,6 +64,12 @@ struct ScoredPath
     double max_occupancy = std::numeric_limits<double>::max();
     bool feasible = false; // Respects the constraints of the ARENA optimizer (acceleration, occupancy at the samples)
     bool safe = false;     // No segment between two samples crosses an occupied voxel (same check as ARENA)
+    bool native = false;   // Evaluated on the trajectory of the planner (scoreTrajectory), not on a NURBS curve
+    // All the physical constraints of the robot respected, the acceleration included even for the planners without
+    // dynamics (an instantaneous change of velocity is infeasible), native trajectories only
+    bool physically_feasible = false;
+    double max_speed = 0.0;    // m/s, native trajectories
+    double length = 0.0;       // m, native trajectories
 };
 
 
@@ -101,6 +108,14 @@ public:
     static Eigen::MatrixXd densify(const Eigen::MatrixXd& a_points, int a_nb_of_points);
 
     /**
+     * @brief Samples (x, y, z, speed) of a trajectory interpolated up to a_nb_of_samples samples, for the evaluation of
+     * the reported costs. Same as LinedroneTestNode::interpolateTrajectory: points at equal distance on every segment
+     * (densify) and a constant acceleration on every segment (squared speed linear in the distance), so that the time of
+     * the trajectory is unchanged.
+     */
+    static Eigen::MatrixXd interpolateTrajectory(const Eigen::MatrixXd& a_samples, int a_nb_of_samples);
+
+    /**
      * @brief Control points (x, y, z, speed) of a path, with at least degree + 1 points.
      *
      * The speed is null at the first and last points and a_speed elsewhere, like the RRT paths that initialize ARENA.
@@ -110,6 +125,14 @@ public:
      * @param a_waypoints 3 x K points of the path, from the start to the goal.
      */
     Eigen::MatrixXd toControlPoints(const Eigen::MatrixXd& a_waypoints, double a_speed, double a_ramp_length = 0.0) const;
+
+    /**
+     * @brief Control points (x, y, z, speed) of a path planned with its own speeds (e.g. MOAR), with at least degree + 1
+     * points. The speed is null at the first and last points, like the trajectories of ARENA.
+     *
+     * @param a_path 4 x K points of the path (x, y, z, speed), from the start to the goal.
+     */
+    Eigen::MatrixXd toControlPointsWithSpeeds(const Eigen::MatrixXd& a_path) const;
 
     /**
      * @brief Evaluates the NURBS curve of the control points.
@@ -124,6 +147,25 @@ public:
     ScoredPath evaluate(const Eigen::MatrixXd& a_control_points);
 
     /**
+     * @brief Evaluates a trajectory of a planner as it is (no NURBS curve) with the cost models and checks of ARENA.
+     *
+     * The costs are the ones of ARENA computed on the trajectory:
+     *     - time: duration of the trajectory
+     *     - safety: mean plus max of the collision cost of the SDF octomap at a_nb_of_samples points at regular distances
+     *       along the path, the start and the goal excluded (Eq. 4 of ARENA)
+     *     - energy: steady-state power of the direction of motion times the duration of every motion, plus the transient
+     *       energy m / 2 |v_{k+1}^2 - v_k^2| of every change of speed (energy model of ARENA)
+     * Constraints: occupancy of the SDF octomap at most 0.5 at the samples, speed at most robot.max_speed and, with
+     * a_check_dynamics, acceleration at most robot.max_acceleration between consecutive points (an instantaneous change
+     * of velocity is then infeasible). Planners without dynamics have instantaneous changes of speed by design, their
+     * acceleration isn't checked. Safety check: ray tracing in the inflated octomap between consecutive points of the
+     * trajectory. The samples (x, y, z, speed) are the ones published and used for the clearance metrics.
+     * ScoredPath::physically_feasible always includes the acceleration constraint, ScoredPath::max_acceleration is the
+     * acceleration of the trajectory (infinite with an instantaneous change of velocity).
+     */
+    ScoredPath scoreTrajectory(const NativeTrajectory& a_trajectory, bool a_check_dynamics, int a_nb_of_samples = 250);
+
+    /**
      * @brief True if no segment between two consecutive samples crosses an occupied voxel of the inflated octomap.
      */
     bool isPathSafe(const Eigen::MatrixXd& a_samples) const;
@@ -132,6 +174,12 @@ public:
      * @brief Number of segments between two consecutive samples crossing an occupied voxel of the inflated octomap.
      */
     int countUnsafeSegments(const Eigen::MatrixXd& a_samples) const;
+
+    /**
+     * @brief Energy (J) of the motion between two consecutive points of a trajectory with the energy model of ARENA:
+     * steady-state power of the direction of motion times the duration, plus the transient energy m / 2 |v_b^2 - v_a^2|.
+     */
+    double transitionEnergy(const TrajectoryPoint& a_from, const TrajectoryPoint& a_to) const;
 
     /**
      * @brief Steady-state power (W) of the robot moving in the direction a_direction, from the energy model of ARENA.

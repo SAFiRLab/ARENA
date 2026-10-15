@@ -53,7 +53,7 @@ namespace arena_benchmarks
  * @brief Pagmo problem of the spline path planning of Ahmed and Deb (ROBIO 2011, Soft Computing 2013).
  *
  * The decision vector holds the (x, y, z) coordinates of the free control points of a B-spline clamped at the start and
- * the goal, bounded by the map. The fitness is given by a callback (3 objectives).
+ * the goal, bounded by the map. The fitness is given by a callback (a_nb_of_objectives objectives).
  */
 class spline_nsga2_problem
 {
@@ -63,9 +63,9 @@ public:
 
     spline_nsga2_problem(unsigned a_nb_of_control_points = 1u, std::shared_ptr<fitness_callback> a_fitness = nullptr,
                          const Eigen::Vector3d& a_min_bounds = Eigen::Vector3d::Zero(),
-                         const Eigen::Vector3d& a_max_bounds = Eigen::Vector3d::Ones())
+                         const Eigen::Vector3d& a_max_bounds = Eigen::Vector3d::Ones(), unsigned a_nb_of_objectives = 2u)
     : nb_of_control_points_(a_nb_of_control_points), fitness_(std::move(a_fitness)),
-      min_bounds_(a_min_bounds), max_bounds_(a_max_bounds)
+      min_bounds_(a_min_bounds), max_bounds_(a_max_bounds), nb_of_objectives_(a_nb_of_objectives)
     {
         if (nb_of_control_points_ == 0u)
             throw std::invalid_argument("spline_nsga2_problem: at least one free control point is needed.");
@@ -78,7 +78,7 @@ public:
         return (*fitness_)(a_dv);
     }
 
-    pagmo::vector_double::size_type get_nobj() const { return 3u; }
+    pagmo::vector_double::size_type get_nobj() const { return nb_of_objectives_; }
 
     std::pair<pagmo::vector_double, pagmo::vector_double> get_bounds() const
     {
@@ -102,6 +102,7 @@ private:
     std::shared_ptr<fitness_callback> fitness_;
     Eigen::Vector3d min_bounds_;
     Eigen::Vector3d max_bounds_;
+    unsigned nb_of_objectives_;
 
 }; // class spline_nsga2_problem
 

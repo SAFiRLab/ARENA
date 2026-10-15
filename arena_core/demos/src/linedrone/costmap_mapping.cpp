@@ -32,6 +32,8 @@
 
 #include "linedrone/costmap_mapping.h"
 
+#include <limits>
+
 
 namespace arena_demos
 {
@@ -109,6 +111,40 @@ bool CostmapMapping::isClearance(const Eigen::VectorXd& point, double clearance)
     }
 
     return true; // Clear of obstacles within the specified clearance
+}
+
+double CostmapMapping::closestObstacleDistance(const Eigen::Vector3d& a_point, double a_max_radius) const
+{
+    if (!octree_)
+        return 0.0;
+
+    const octomap::point3d point(a_point[0], a_point[1], a_point[2]);
+    const double resolution = octree_->getResolution();
+    double search_radius = resolution;
+    double old_search_radius = 0.0;
+    double min_distance = std::numeric_limits<double>::max();
+    bool found = false;
+
+    while (search_radius <= a_max_radius)
+    {
+        for (auto it = octree_->begin_leafs_bbx(point - octomap::point3d(search_radius, search_radius, search_radius),
+                                                point + octomap::point3d(search_radius, search_radius, search_radius));
+             it != octree_->end_leafs_bbx(); ++it)
+        {
+            double distance = point.distance(it.getCoordinate());
+            if (distance > old_search_radius && octree_->isNodeOccupied(*it) && distance < min_distance)
+            {
+                min_distance = distance;
+                found = true;
+            }
+        }
+        if (found)
+            break;
+        old_search_radius = search_radius;
+        search_radius += resolution;
+    }
+
+    return found ? min_distance : 0.0;
 }
 
 Eigen::MatrixXd CostmapMapping::getMapBounds() const

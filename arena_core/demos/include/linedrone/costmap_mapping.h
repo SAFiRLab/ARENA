@@ -227,6 +227,22 @@ public:
      */
     Eigen::MatrixXd getMapBounds() const override;
 
+    /**
+     * @brief Distance from a point to the closest occupied voxel center of the inflated octree, searched in growing boxes
+     * of the octree resolution (same measure as testbench_node::getClosestObstacleDistance).
+     * @return The distance, 0 if no occupied voxel is found within a_max_radius.
+     */
+    double closestObstacleDistance(const Eigen::Vector3d& a_point, double a_max_radius = 100.0) const;
+
+    /** @brief Resolution of the inflated octree (m), 0 if it isn't set. */
+    double getResolution() const { return octree_ ? octree_->getResolution() : 0.0; }
+
+    /**
+     * @brief Spacing of the samples of the final evaluation of the trajectories (tests only):
+     * a_spacing > 0: a_spacing; a_spacing < 0: half the resolution of the octree; 0: no resolution-based evaluation.
+     */
+    double evaluationSpacing(double a_spacing) const { return a_spacing < 0.0 ? 0.5 * getResolution() : a_spacing; }
+
 
     /**** Setters ****/
 

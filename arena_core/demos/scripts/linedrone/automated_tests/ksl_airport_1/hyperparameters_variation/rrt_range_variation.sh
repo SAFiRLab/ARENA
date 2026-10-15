@@ -13,6 +13,13 @@ hyperparameter_min=1.0
 hyperparameter_max=30.0
 num_iter=10
 
+# The costs of the reported solutions are evaluated with evaluation_sample_size samples (linear interpolation of the
+# samples of the planner), the sample size of the reference fronts, so that the fronts of every setting are comparable
+evaluation_sample_size=250
+
+# Sample size of the optimization, the default of the sweeps (the planner's own value is in linedrone_problem_params.yaml)
+nurbs_sample_size=50
+
 run_in_terminal "costmap_3D" "ros2 launch arena_core costmap_3D_launch.py"
 
 # The testbench starts and restarts the planner by itself
@@ -26,6 +33,8 @@ run_in_terminal "testbench" "ros2 launch arena_core testbench_launch.py \
     hyperparameter_min:=${hyperparameter_min} \
     hyperparameter_max:=${hyperparameter_max} \
     hyperparameter_steps:=${hyperparameter_steps} \
-    hyperparameter_nb_of_iter:=${num_iter}"
+    hyperparameter_nb_of_iter:=${num_iter} \
+    evaluation_sample_size:=${evaluation_sample_size} \
+    fixed_nurbs_sample_size:=${nurbs_sample_size}"
 
 follow_testbench_nodes

@@ -3,6 +3,7 @@ set(ARENA_CORE_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/geometry/ompl_state_validity_checker.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/planning/OMPLPlanner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/math/algorithm/adaptive_voting_algorithm.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/math/algorithm/voting_algorithm.cpp
 )
 
 # Library public headers

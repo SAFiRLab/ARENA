@@ -88,8 +88,9 @@ void LinedroneNurbsAnalyzer::evalTimeCost(const double a_distance, const double 
         linedrone_output_.time_output_ += a_distance / a_velocity; // Normal case
 }
 
-void LinedroneNurbsAnalyzer::evalCollisionCost(const Eigen::Vector3d& a_point1, bool a_in_safety_cost)
+bool LinedroneNurbsAnalyzer::evalCollisionCost(const Eigen::Vector3d& a_point1, bool a_in_safety_cost)
 {
+    double occupancy = 0.0;
     auto capability = costmap_mapping_->getCapability<arena_demos::CostSDFCapability>();
     if (capability)
     {
@@ -103,12 +104,13 @@ void LinedroneNurbsAnalyzer::evalCollisionCost(const Eigen::Vector3d& a_point1, 
             linedrone_output_.nb_of_collision_checks_++;
         }
 
-        double occupancy = capability->getOccupancy(a_point1);
+        occupancy = capability->getOccupancy(a_point1);
         if (occupancy > linedrone_output_.max_occupancy_)
             linedrone_output_.max_occupancy_ = occupancy;
     }
     else
         std::cerr << "CostmapMapping cannot provide CostSDFCapability, collision cost evaluation is skipped." << std::endl;
+    return !(occupancy > linedrone_config.max_occupancy_);
 }
 
 void LinedroneNurbsAnalyzer::evalEnergyCost(const Eigen::Vector3d& a_point_i_m_1, const Eigen::Vector3d& a_point_i, 
@@ -165,7 +167,7 @@ double LinedroneNurbsAnalyzer::steadyStatePower(const Eigen::Vector3d& a_unit_ve
     return Eigen::Vector3d(roll_power, pitch_power, z_power).norm();
 }
 
-void LinedroneNurbsAnalyzer::evalAccelerationConstraint(const Eigen::Vector3d& a_point_i_m_1, const Eigen::Vector3d& a_point_i, 
+bool LinedroneNurbsAnalyzer::evalAccelerationConstraint(const Eigen::Vector3d& a_point_i_m_1, const Eigen::Vector3d& a_point_i, 
                                                      const Eigen::Vector3d& a_point_i_p_1, const Eigen::Vector3d& a_point_i_p_2,
                                                      const Eigen::Vector3d& a_point_i_p_3, const double a_velocity_i_m_1,
                                                      const double a_velocity_i, const double a_velocity_i_p_1, const double a_velocity_i_p_2)
@@ -197,6 +199,16 @@ void LinedroneNurbsAnalyzer::evalAccelerationConstraint(const Eigen::Vector3d& a
     double acceleration_magnitude = acceleration_i.norm();
     if (acceleration_magnitude > linedrone_output_.max_acceleration_)
         linedrone_output_.max_acceleration_ = acceleration_magnitude;
+    return !(acceleration_magnitude > linedrone_config.robot_max_acceleration_);
+}
+
+void LinedroneNurbsAnalyzer::rejectEvaluation(arena_core::EvalNurbsOutput& a_output)
+{
+    for (double& fitness : a_output.fitness_array_)
+        fitness = std::numeric_limits<double>::max();
+    a_output.constraint_array_[0] = linedrone_output_.max_acceleration_;
+    a_output.constraint_array_[1] = linedrone_output_.max_occupancy_;
+    linedrone_output_ = LinedroneEvalNurbsOutput();
 }
 
 void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_core::EvalNurbsOutput& a_output)
@@ -213,6 +225,9 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
     if (a_output.constraint_size_ > 0 && a_output.constraint_array_.size() != a_output.constraint_size_)
         throw std::runtime_error("Constraint array size does not match the expected constraint output size.");
     
+    // Rejection at the first constraint violation (optimizer only, see LinedroneNurbsAnalyzerConfig)
+    const bool early_exit = linedrone_config.early_exit_on_constraint_violation_;
+
     for (unsigned int i = 0; i < linedrone_config.base_config.sample_size - 3; i++)
     {
         Eigen::Map<const Eigen::Vector3d> point1(a_curve_points.col(i).data());
@@ -227,7 +242,8 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
         evalTimeCost(distance, velocity_DUA_i);
 
         // Evaluate collision cost between point1 and point2 (the start, sample 0, isn't part of the safety cost)
-        evalCollisionCost(point1, i > 0);
+        if (!evalCollisionCost(point1, i > 0) && early_exit)
+            return rejectEvaluation(a_output);
 
         // Evaluate insertion cost (if needed, currently not implemented)
         //if (!obbs_.empty())
@@ -242,8 +258,9 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
             double velocity_i_m_1 = a_curve_points(3, i - 1);
             double velocity_i_p2 = a_curve_points(3, i + 2);
 
-            evalAccelerationConstraint(point0, point1, point2, point3, point4,
-                                       velocity_i_m_1, velocity_i, velocity_i_p1, velocity_i_p2);
+            if (!evalAccelerationConstraint(point0, point1, point2, point3, point4,
+                                            velocity_i_m_1, velocity_i, velocity_i_p1, velocity_i_p2) && early_exit)
+                return rejectEvaluation(a_output);
             evalEnergyCost(point0, point1, point2, velocity_i, velocity_i_p1);
         }
         else
@@ -264,7 +281,8 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
         evalTimeCost(distance, velocity_DUA_i);
 
         // Evaluate collision cost for the last segment
-        evalCollisionCost(point1);
+        if (!evalCollisionCost(point1) && early_exit)
+            return rejectEvaluation(a_output);
 
         // Evaluate insertion cost (if needed, currently not implemented)
         //if (!obbs_.empty())
@@ -295,7 +313,8 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
     Eigen::Map<const Eigen::Vector3d> last_point(a_curve_points.col(linedrone_config.base_config.sample_size - 1).data());
 
     // The goal isn't part of the safety cost, only its occupancy is checked
-    evalCollisionCost(last_point, false);
+    if (!evalCollisionCost(last_point, false) && early_exit)
+        return rejectEvaluation(a_output);
 
     // if (!obbs_.empty())
     //    evalInsertionCost(last_point); // Placeholder for insertion cost evaluation

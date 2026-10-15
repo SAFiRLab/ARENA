@@ -1,0 +1,10 @@
+# A* benchmark planner (nodes/testbench/benchmarks/moar_3d, mode astar): shortest path on the 3D grid, the benchmark "A*"
+# of the MOAR paper, flown at a constant speed.
+/**:
+    ros__parameters:
+        moar_3d:
+            mode: "astar"
+            grid_resolution: 1.0            # Size of the grid cells in m (resolution of the octomaps of the tests)
+            clearance: 0.8                  # Valid cells: same clearance as the RRT of ARENA (OMPLStateValidityChecker)
+        benchmark:
+            speed: 0.5                      # Constant speed of the path (robot.max_speed), flown as planned

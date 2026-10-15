@@ -17,7 +17,7 @@ from launch_ros.actions import Node
 
 CONFIG_DIR = '/home/dev_ws/src/arena_core/demos/config/linedrone'
 ROBOT_PARAMS = os.path.join(CONFIG_DIR, 'linedrone_problem_params.yaml')
-ALGORITHMS = ['moar_3d', 'rrt_star', 'spline_nsga2']
+ALGORITHMS = ['moar_3d', 'rrt_star', 'spline_nsga2', 'apex', 'po_rrt_star', 'kino_astar', 'kino_rrt_star']
 
 
 def launch_planner(context):

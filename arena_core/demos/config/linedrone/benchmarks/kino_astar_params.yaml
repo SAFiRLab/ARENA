@@ -1,0 +1,18 @@
+# Kinodynamic A* benchmark planner (nodes/testbench/benchmarks/kino_astar): kinodynamic path searching of Fast-Planner
+# (Zhou et al., RA-L 2019). Parameters of Fast-Planner (kino_algorithm.xml) except the limits, the horizon and the node
+# limit. max_tau is scaled to the robot: Fast-Planner's 0.6 s is tuned for 3 m/s and 2 m/s^2; with the limits of the
+# robot, every non-zero input from rest exceeds the speed limit within 0.6 s and the search can't leave the start (the
+# half input must stay below max_vel: max_tau <= max_vel / (max_acc / 2) = 0.45 s). The limits apply to every component in Fast-Planner: by default robot.max_speed / sqrt(3) and
+# robot.max_acceleration / sqrt(3), so that the limits of the robot (norms) hold.
+/**:
+    ros__parameters:
+        kino_astar:
+            max_tau: 0.4                    # s, duration of the motion primitives (0.6 in Fast-Planner, see above)
+            init_max_tau: 0.8               # s, primitives of the first search loop
+            w_time: 10.0                    # rho
+            lambda_heu: 5.0                 # Weight of the heuristic
+            resolution_astar: 0.1           # m, voxels of the search
+            check_num: 5                    # Collision checks per primitive
+            allocate_num: 20000000          # Node limit (100000 in Fast-Planner, local maps)
+            clearance: 0.8                  # Occupied: same validity as the other benchmarks
+            sampling_step: 0.05             # s, sampling of the trajectory for its evaluation

@@ -46,10 +46,12 @@
 #include "arena_core/math/control_point.h"
 #include "arena_core/planning/OMPLPlanner.h"
 #include "arena_core/geometry/ompl_state_validity_checker.h"
-#include "arena_core/math/algorithm/adaptive_voting_algorithm.h"
+#include "arena_core/math/algorithm/voting_algorithm.h"
 #include "linedrone/linedrone_nurbs_analyzer.h"
 #include "linedrone/linedrone_problem.hpp"
 #include "linedrone/costmap_mapping.h"
+#include "linedrone/sdf_state_validity_checker.h"
+#include "testbench/benchmarks/moar_3d/weighted_astar_3d.h"
 
 // External Libraries
 // Eigen
@@ -63,7 +65,10 @@
 #include <ompl/base/objectives/PathLengthOptimizationObjective.h>
 
 // System
+#include <algorithm>
 #include <numeric>
+#include <iomanip>
+#include <fstream>
 #include <limits>
 
 
@@ -137,6 +142,52 @@ private:
 
     Eigen::MatrixXd addControlPointsToPath(const Eigen::MatrixXd& initial_control_points, const int nb_of_control_points) const;
 
+    /** @brief Samples of a trajectory interpolated up to nb_of_samples samples, for the evaluation of the reported costs.
+     * 
+     * The points are inserted at equal distance on every segment between two samples (addControlPointsToPath). The speed
+     * follows a constant acceleration on every segment (squared speed linear in the distance), the motion model of the
+     * time cost (2 d / (v1 + v2) per segment): the time of the trajectory is unchanged. A linear speed would take longer
+     * near a null speed (start and goal) and penalize the trajectories accelerating over few samples.
+     * 
+     * @param path Samples of the trajectory (rows x, y, z, speed).
+     */
+    Eigen::MatrixXd interpolateTrajectory(const Eigen::MatrixXd& path, const int nb_of_samples) const;
+
+    /** @brief Costs of a trajectory evaluated with optimization.evaluation_sample_size samples (tests only).
+     *
+     * With few samples, the optimizer only sees the costs at the samples: a trajectory whose samples are far from the
+     * obstacles gets a good safety cost even if the segments between them pass close to an obstacle. The samples are
+     * interpolated (interpolateTrajectory: points at equal distance on every segment between two samples, constant
+     * acceleration) up to the evaluation sample size and the costs are evaluated again, so that the Pareto fronts of
+     * every sample size can be compared to the reference front.
+     *
+     * @param path Samples of the trajectory (rows x, y, z, velocity).
+     * @param fitness Costs given by the optimizer, returned unchanged when the evaluation is disabled or the trajectory
+     *                already has at least evaluation_sample_size samples.
+     * @return The time, safety and energy costs of the interpolated trajectory.
+     */
+    pagmo::vector_double evaluationFitness(const Eigen::MatrixXd& path, const pagmo::vector_double& fitness);
+
+    /**
+     * @brief Final evaluation of a solution at a resolution of the map (optimization.evaluation_spacing, tests only): the
+     * NURBS curve of the solution sampled every a_spacing meters along it (a longer trajectory has more samples), its
+     * costs, its constraints (acceleration, occupancy) and the ray tracing between its samples. Not part of the planning
+     * time and not used by the optimizer nor the voting: only the reports use it.
+     *
+     * Time and energy: instantaneous start and stop, the first segment of the optimizer is flown at the speed of its second
+     * sample and the last one at the speed of its second last sample (the speed of the NURBS curve goes to 0 at the ends:
+     * its travel time would grow without bound with the resolution), the NURBS speed elsewhere, constant acceleration
+     * between two samples. The acceleration constraint is checked on the NURBS speeds (the instantaneous start and stop
+     * only account for the time and the energy).
+     *
+     * @param a_dv Decision vector of the solution.
+     * @param a_samples Samples of the curve (rows x, y, z, velocity).
+     * @param a_fitness Time, safety and energy costs of the samples.
+     * @return True if the samples respect the constraints and no segment between them crosses an occupied voxel.
+     */
+    bool resolutionEvaluation(const pagmo::vector_double& a_dv, double a_spacing, Eigen::MatrixXd& a_samples,
+                              pagmo::vector_double& a_fitness);
+
     /** @brief Uses ompl_wrapper to plan initial paths for the ARENA optimization process
      * 
      * This function initializes the planning process for the Linedrone by generating initial paths, therefore generating intial control points.
@@ -156,18 +207,32 @@ private:
      */
     void updateOptimizationParameters();
 
+    /** @brief Builds the voting algorithm and computes its coefficients from the parameters (optimization.voting).
+     *
+     * optimization.voting.algorithm selects the voting algorithm (risk_weighted_tchebycheff or rank). With
+     * optimization.voting.use_risks, the coefficients of the objectives are computed by the algorithm from the risks
+     * (optimization.voting.risks.*), otherwise they are optimization.adaptive_costs_weights.* (fixed coefficients of the
+     * tests).
+     */
+    void updateVotingAlgorithm();
+
     /** @brief Publishes the report of a planning attempt and notifies that the attempt is finished.
      * 
      * Every planning attempt is reported, feasible or not, so that the testbench can evaluate the feasibility rate.
      * 
-     * @param feasible_fitness The fitness of the solutions respecting the constraints at the end of the optimization.
+     * @param feasible_fitness The fitness of the solutions respecting the constraints at the end of the optimization
+     *                         (evaluated with optimization.evaluation_sample_size samples when it is set).
      * @param chosen_idx The index of the chosen solution in feasible_fitness, or -1 if no feasible solution has been found.
      */
     void publishPlanningInfos(const std::vector<pagmo::vector_double>& feasible_fitness, const std::vector<bool>& safe, int chosen_idx);
 
     /** @brief Publishes the report of a planning attempt that didn't find any feasible solution.
      */
-    void publishInfeasiblePlanning() { publishPlanningInfos({}, {}, -1); }
+    void publishInfeasiblePlanning()
+    {
+        planning_end_time_ = std::chrono::steady_clock::now();
+        publishPlanningInfos({}, {}, -1);
+    }
 
     // ROS Timers
     rclcpp::TimerBase::SharedPtr run_timer_;
@@ -243,9 +308,14 @@ private:
     arena_demos::LinedroneNurbsAnalyzerConfig linedrone_config;
     arena_core::EvalNurbsOutput linedrone_output_;
     std::shared_ptr<arena_demos::LinedroneNurbsAnalyzer> linedrone_nurbs_analyzer_;
+    // Costs reported to the testbench with optimization.evaluation_sample_size samples, null when it isn't set
+    std::shared_ptr<arena_demos::LinedroneNurbsAnalyzer> evaluation_nurbs_analyzer_;
+    unsigned int evaluation_sample_size_ = 0;
     std::shared_ptr<arena_demos::CostmapMapping> costmap_mapping_;
     std::shared_ptr<arena_core::Nurbs<4>> nurbs_;
     std::shared_ptr<Eigen::MatrixXd> arena_path_;
+    Eigen::MatrixXd reported_path_; // Samples of the chosen trajectory of the final evaluation (optimization.evaluation_spacing)
+    std::chrono::steady_clock::time_point planning_end_time_; // After the choice of the trajectory
     bool planning_activated_ = false;
     bool path_planned_ = false;
     bool octree_received_ = false;
@@ -264,6 +334,19 @@ private:
     std::chrono::steady_clock::time_point planning_start_time_;
     double initialization_time_ = 0.0; // s
     double optimization_time_ = 0.0;   // s
+    // optimization.early_exit_on_constraint_violation (on by default): the analyzer of the optimizer stops at the first
+    // constraint violation. State of the current analyzer, built without it in the constructor
+    bool early_exit_ = false;
+    // optimization.verify_early_exit: every fitness is also evaluated without early exit and compared (tests only)
+    bool verify_early_exit_ = false;
+    std::shared_ptr<arena_demos::LinedroneNurbsAnalyzer> reference_nurbs_analyzer_;
+    size_t early_exit_mismatches_ = 0, early_exit_checks_ = 0;
+    int export_counter_ = 0;           // Plannings written in optimization.export_solutions_file
+
+    // Voting algorithm selecting the solution and its coefficients (time, safety, energy) for the current planning
+    std::unique_ptr<arena_core::IVotingAlgorithm> voting_algorithm_;
+    arena_core::ObjectiveCoefficients voting_coefficients_ = {1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0};
+    double evaluation_time_ = 0.0;     // s, evaluation of the reported costs (tests only), not part of the planning time
     int nb_of_control_points_ = 0;
     
     // ROS namespace
@@ -653,6 +736,123 @@ Eigen::MatrixXd LinedroneTestNode::addControlPointsToPath(const Eigen::MatrixXd&
     return new_path;
 }
 
+Eigen::MatrixXd LinedroneTestNode::interpolateTrajectory(const Eigen::MatrixXd& path, const int nb_of_samples) const
+{
+    Eigen::MatrixXd squared_speed_path = path;
+    squared_speed_path.row(3) = path.row(3).array().square();
+    Eigen::MatrixXd interpolated = addControlPointsToPath(squared_speed_path, nb_of_samples);
+    interpolated.row(3) = interpolated.row(3).array().max(0.0).sqrt();
+    return interpolated;
+}
+
+pagmo::vector_double LinedroneTestNode::evaluationFitness(const Eigen::MatrixXd& path, const pagmo::vector_double& fitness)
+{
+    if (!evaluation_nurbs_analyzer_ || path.cols() >= static_cast<int>(evaluation_sample_size_))
+        return fitness;
+
+    auto start_time = std::chrono::steady_clock::now();
+
+    // Only the costs are kept: the constraints were checked by the optimizer on its own samples, and the acceleration
+    // of the interpolated trajectory is meaningless at the corners of the polyline (direction change over a tiny segment).
+    // The segments between the samples are checked for collisions by isPathSafe().
+    arena_core::EvalNurbsOutput output = linedrone_output_;
+    evaluation_nurbs_analyzer_->eval(interpolateTrajectory(path, evaluation_sample_size_), output);
+    evaluation_time_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
+    return output.fitness_array_;
+}
+
+bool LinedroneTestNode::resolutionEvaluation(const pagmo::vector_double& a_dv, double a_spacing, Eigen::MatrixXd& a_samples,
+                                             pagmo::vector_double& a_fitness)
+{
+    auto start_time = std::chrono::steady_clock::now();
+    const int optimizer_sample_size = static_cast<int>(linedrone_config.base_config.sample_size);
+    a_fitness.assign(3, std::numeric_limits<double>::max());
+
+    // Dense sampling of the curve containing the samples of the optimizer (uniform in the curve parameter): optimizer
+    // sample j is dense sample j * kDensity
+    constexpr int kDensity = 40;
+    nurbs_->setControlPoints(pagmoDVToControlPoints(a_dv));
+    nurbs_->setSampleSize((optimizer_sample_size - 1) * kDensity + 1);
+    const Eigen::MatrixXd dense = nurbs_->evaluate();
+    nurbs_->setSampleSize(optimizer_sample_size);
+    if (dense.cols() < 2 || !dense.allFinite())
+    {
+        evaluation_time_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
+        return false;
+    }
+    std::vector<double> distance(dense.cols(), 0.0);
+    for (int i = 1; i < dense.cols(); ++i)
+        distance[i] = distance[i - 1] + (dense.block<3, 1>(0, i) - dense.block<3, 1>(0, i - 1)).norm();
+    const double length = distance.back();
+    // Instantaneous start and stop: on the first segment of the optimizer the speed is the one of its second sample, on
+    // the last segment the one of its second last sample (the NURBS speed goes to 0 at the ends, its travel time would
+    // grow without bound with the sampling resolution)
+    const double first_end = distance[kDensity], last_start = distance[dense.cols() - 1 - kDensity];
+    const double first_speed = dense(3, kDensity), last_speed = dense(3, dense.cols() - 1 - kDensity);
+
+    // Samples every a_spacing meters along the curve (a longer trajectory has more samples)
+    const int nb_of_samples = std::max(5, static_cast<int>(std::ceil(length / a_spacing)) + 1);
+    a_samples = Eigen::MatrixXd(4, nb_of_samples);
+    std::vector<double> sample_distance(nb_of_samples);
+    int k = 1;
+    for (int i = 0; i < nb_of_samples; ++i)
+    {
+        const double s = length * i / (nb_of_samples - 1);
+        while (k < dense.cols() - 1 && distance[k] < s)
+            ++k;
+        const double segment = distance[k] - distance[k - 1];
+        const double alpha = segment > 1.0e-12 ? std::clamp((s - distance[k - 1]) / segment, 0.0, 1.0) : 1.0;
+        a_samples.col(i) = (1.0 - alpha) * dense.col(k - 1) + alpha * dense.col(k);
+        sample_distance[i] = s;
+    }
+
+    // Safety cost, occupancy and acceleration constraints with the analyzer of ARENA (no early exit) on the NURBS speeds
+    arena_demos::LinedroneNurbsAnalyzerConfig config = linedrone_config;
+    config.base_config.sample_size = static_cast<unsigned int>(nb_of_samples);
+    config.early_exit_on_constraint_violation_ = false;
+    arena_demos::LinedroneNurbsAnalyzer analyzer(costmap_mapping_, config, std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>{});
+    arena_core::EvalNurbsOutput output = linedrone_output_;
+    output.fitness_array_.assign(output.fitness_size_, std::numeric_limits<double>::max());
+    output.constraint_array_.assign(output.constraint_size_, std::numeric_limits<double>::max());
+    analyzer.eval(a_samples, output);
+
+    // Time and energy with the instantaneous start and stop (same energy model as the analyzer: steady-state power of the
+    // direction of motion times the duration, transient energy m / 2 |v_b^2 - v_a^2| of every change of speed)
+    auto speedAt = [&](int i)
+    {
+        if (sample_distance[i] <= first_end)
+            return first_speed;
+        if (sample_distance[i] >= last_start)
+            return last_speed;
+        return a_samples(3, i);
+    };
+    const double half_mass = 0.5 * linedrone_config.robot_mass_;
+    double time = 0.0;
+    double energy = half_mass * (first_speed * first_speed + last_speed * last_speed); // Start and stop
+    for (int i = 0; i + 1 < nb_of_samples; ++i)
+    {
+        const Eigen::Vector3d displacement = a_samples.block<3, 1>(0, i + 1) - a_samples.block<3, 1>(0, i);
+        const double d = displacement.norm();
+        const double v0 = speedAt(i), v1 = speedAt(i + 1);
+        const double mean_speed = 0.5 * (v0 + v1); // Constant acceleration between two samples
+        const double dt = d / std::max(mean_speed, 1.0e-6);
+        time += dt;
+        if (d > 1.0e-12)
+            energy += analyzer.steadyStatePower(displacement / d, displacement.z() < 0.0) * dt;
+        energy += half_mass * std::abs(v1 * v1 - v0 * v0);
+    }
+    for (int i = 0; i < nb_of_samples; ++i)
+        a_samples(3, i) = speedAt(i); // Reported speeds
+
+    a_fitness = {time, output.fitness_array_[1], energy};
+    const bool valid = output.constraint_array_[0] <= linedrone_config.robot_max_acceleration_ &&
+                       output.constraint_array_[1] <= linedrone_config.max_occupancy_ &&
+                       std::isfinite(output.fitness_array_[1]) && output.fitness_array_[1] != std::numeric_limits<double>::max() &&
+                       std::isfinite(time) && std::isfinite(energy) && isPathSafe(a_samples);
+    evaluation_time_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
+    return valid;
+}
+
 void LinedroneTestNode::initializerPlanning()
 {
     if (!ompl_planner_)
@@ -664,6 +864,8 @@ void LinedroneTestNode::initializerPlanning()
     planning_start_time_ = std::chrono::steady_clock::now();
     initialization_time_ = 0.0;
     optimization_time_ = 0.0;
+    early_exit_mismatches_ = early_exit_checks_ = 0;
+    evaluation_time_ = 0.0;
     nb_of_control_points_ = 0;
     updateOptimizationParameters();
 
@@ -695,6 +897,27 @@ void LinedroneTestNode::initializerPlanning()
     start_point_ = drone_position_;
     ompl_planner_->setStart(drone_position_);
 
+    // RRT states clear of the inflated octomap (default). With the SDF, the states also have an SDF collision cost at most
+    // the highest cost of the start and the goal (initial paths in the safest area, outside the SDF when possible):
+    // optimization.initialization.sdf_validity_ratio is the share of the initial paths planned with the SDF (0: none, 1:
+    // all), optimization.initialization.sdf_validity = true is a ratio of 1
+    double sdf_validity_ratio = this->has_parameter("optimization.initialization.sdf_validity_ratio") ?
+        std::clamp(this->get_parameter("optimization.initialization.sdf_validity_ratio").as_double(), 0.0, 1.0) : 0.0;
+    if (this->has_parameter("optimization.initialization.sdf_validity") &&
+        this->get_parameter("optimization.initialization.sdf_validity").as_bool())
+        sdf_validity_ratio = 1.0;
+    auto default_checker = std::make_shared<arena_core::OMPLStateValidityChecker>(ompl_planner_->getSpaceInformation(), costmap_mapping_);
+    std::shared_ptr<ompl::base::StateValidityChecker> sdf_checker;
+    auto sdf = costmap_mapping_->getCapability<arena_demos::CostSDFCapability>();
+    if (sdf_validity_ratio > 0.0 && sdf)
+    {
+        const double max_cost = std::max(sdf->getCollisionCost(drone_position_), sdf->getCollisionCost(planning_goal_.goal_));
+        sdf_checker = std::make_shared<arena_demos::SdfStateValidityChecker>(ompl_planner_->getSpaceInformation(), costmap_mapping_, max_cost);
+        RCLCPP_INFO(get_logger(), "RRT initialization: %.0f%% of the paths with the SDF (collision cost at most %.3f)",
+                    100.0 * sdf_validity_ratio, max_cost);
+    }
+    const size_t nb_of_sdf_paths = sdf_checker ? static_cast<size_t>(std::lround(sdf_validity_ratio * population_size_)) : 0;
+
     // Seed speed of the RRT paths relative to the max speed (see below)
     const double initial_speed_ratio = this->has_parameter("optimization.initialization.initial_speed_ratio") ?
         this->get_parameter("optimization.initialization.initial_speed_ratio").as_double() : 1.0;
@@ -702,8 +925,68 @@ void LinedroneTestNode::initializerPlanning()
     int successive_failed_planning_attempts = 0;
     // Start timer for initialization process
     auto start_time = std::chrono::steady_clock::now();
+
+    // optimization.initialization.astar_ratio: share of the initial paths given by a shortest path A* on a grid of
+    // optimization.initialization.astar_resolution (same validity as the RRT), its points taken every RRT range along the
+    // path (same spacing as the nodes of the RRT paths), the other paths by the RRT
+    const double astar_ratio = this->has_parameter("optimization.initialization.astar_ratio") ?
+        std::clamp(this->get_parameter("optimization.initialization.astar_ratio").as_double(), 0.0, 1.0) : 0.0;
+    const size_t nb_of_astar_paths = static_cast<size_t>(std::lround(astar_ratio * population_size_));
+    if (nb_of_astar_paths > 0)
+    {
+        arena_benchmarks::WeightedAStar3DConfig astar_config;
+        astar_config.resolution = this->has_parameter("optimization.initialization.astar_resolution") ?
+            this->get_parameter("optimization.initialization.astar_resolution").as_double() : 1.0;
+        astar_config.min_bounds = min_bounds;
+        astar_config.max_bounds = max_bounds;
+        auto mapping = costmap_mapping_;
+        arena_benchmarks::WeightedAStar3D astar(astar_config, [mapping](const Eigen::Vector3d& p) { return mapping->isClearance(p, 0.8); });
+        auto length = [](const Eigen::Vector3d& from, const Eigen::Vector3d& to) { return (to - from).norm(); };
+        std::vector<Eigen::Vector3d> grid_path;
+        if (astar.search(drone_position_, planning_goal_.goal_, length, length, grid_path) && grid_path.size() >= 2)
+        {
+            // Points every RRT range along the path, the start and the goal kept
+            const double spacing = this->get_parameter("optimization.initialization.rrt_range").as_double();
+            std::vector<Eigen::Vector3d> points = {grid_path.front()};
+            double since_last = 0.0;
+            for (size_t i = 1; i < grid_path.size(); ++i)
+            {
+                const Eigen::Vector3d a = grid_path[i - 1], b = grid_path[i];
+                const double segment = (b - a).norm();
+                double position = 0.0;
+                while (segment - position + since_last >= spacing)
+                {
+                    position += spacing - since_last;
+                    points.push_back(a + (b - a) * (position / segment));
+                    since_last = 0.0;
+                }
+                since_last += segment - position;
+            }
+            if (points.size() > 1 && (points.back() - grid_path.back()).norm() < 0.5 * spacing)
+                points.pop_back();
+            points.push_back(grid_path.back());
+
+            Eigen::MatrixXd path_matrix(4, points.size());
+            for (size_t i = 0; i < points.size(); ++i)
+            {
+                path_matrix.block<3, 1>(0, i) = points[i];
+                // Same seed speeds as the RRT paths (see below)
+                path_matrix(3, i) = (i > 0 && i + 1 < points.size()) ? linedrone_config.robot_max_speed_ * initial_speed_ratio : 0.0;
+            }
+            for (size_t k = 0; k < nb_of_astar_paths; ++k)
+                initial_paths_.push_back(path_matrix);
+            RCLCPP_INFO(get_logger(), "Initialization: %zu path(s) from the shortest path A* (%zu points)", nb_of_astar_paths, points.size());
+        }
+        else
+            RCLCPP_WARN(get_logger(), "Initialization: the shortest path A* found no path, the RRT gives every path");
+    }
+
+    const size_t first_rrt_path = initial_paths_.size(); // After the A* paths
     while (initial_paths_.size() < population_size_)
     {
+        // The first RRT paths in the safest area (SDF), the others with the default validity
+        ompl_planner_->getInitializer()->state_validity_checker_ = initial_paths_.size() - first_rrt_path < nb_of_sdf_paths ?
+            sdf_checker : std::static_pointer_cast<ompl::base::StateValidityChecker>(default_checker);
         if (ompl_planner_->plan() == ompl::base::PlannerStatus::EXACT_SOLUTION)
         {
             successive_failed_planning_attempts = 0;
@@ -784,22 +1067,31 @@ pagmo::vector_double LinedroneTestNode::linedroneFitness(const pagmo::vector_dou
     if (pt.cols() != static_cast<int>(linedrone_config.base_config.sample_size) || !pt.allFinite())
         return linedrone_output_.fitness_array_;
 
-    // Evaluate the NURBS curve using the Linedrone NURBS Analyzer
-    linedrone_nurbs_analyzer_->eval(pt, linedrone_output_);
+    // Rejection of the solutions violating a constraint: every cost is the max double
+    auto reject = [this](arena_core::EvalNurbsOutput& output)
+    {
+        // Reject the solution if it exceeds the maximum acceleration or if it's in collision with the environment
+        if (output.constraint_array_[0] > linedrone_config.robot_max_acceleration_ ||
+            output.constraint_array_[1] > linedrone_config.max_occupancy_)
+            output.fitness_array_.assign(output.fitness_array_.size(), std::numeric_limits<double>::max());
+    };
 
-    if (linedrone_output_.constraint_array_[0] > linedrone_config.robot_max_acceleration_)
+    // Evaluate the NURBS curve using the Linedrone NURBS Analyzer (stops at the first constraint violation with
+    // optimization.early_exit_on_constraint_violation)
+    linedrone_nurbs_analyzer_->eval(pt, linedrone_output_);
+    reject(linedrone_output_);
+
+    // optimization.verify_early_exit: same fitness as the evaluation of the whole curve
+    if (verify_early_exit_ && reference_nurbs_analyzer_)
     {
-        // Reject the solution if it exceeds the maximum acceleration
-        linedrone_output_.fitness_array_[0] = std::numeric_limits<double>::max();
-        linedrone_output_.fitness_array_[1] = std::numeric_limits<double>::max();
-        linedrone_output_.fitness_array_[2] = std::numeric_limits<double>::max();
-    }
-    else if (linedrone_output_.constraint_array_[1] > 0.5)
-    {
-        // Reject the solution if it's in collision with the environment
-        linedrone_output_.fitness_array_[0] = std::numeric_limits<double>::max();
-        linedrone_output_.fitness_array_[1] = std::numeric_limits<double>::max();
-        linedrone_output_.fitness_array_[2] = std::numeric_limits<double>::max();
+        arena_core::EvalNurbsOutput reference = linedrone_output_;
+        reference.fitness_array_.assign(reference.fitness_size_, std::numeric_limits<double>::max());
+        reference.constraint_array_.assign(reference.constraint_size_, std::numeric_limits<double>::max());
+        reference_nurbs_analyzer_->eval(pt, reference);
+        reject(reference);
+        early_exit_checks_++;
+        if (reference.fitness_array_ != linedrone_output_.fitness_array_)
+            early_exit_mismatches_++;
     }
 
     return linedrone_output_.fitness_array_;
@@ -892,6 +1184,9 @@ void LinedroneTestNode::ARENAOptimization()
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     optimization_time_ = std::chrono::duration<double>(end_time - start_time).count();
     RCLCPP_INFO(get_logger(), "ARENAOptimization => Optimization completed in %ld milliseconds.", duration);
+    if (verify_early_exit_)
+        RCLCPP_INFO(get_logger(), "ARENAOptimization => Early exit check: %zu mismatches in %zu fitness evaluations",
+                    early_exit_mismatches_, early_exit_checks_);
 
     // Filter trajectories that doesn't respect the constraints
     std::vector<int> to_remove;
@@ -928,20 +1223,115 @@ void LinedroneTestNode::ARENAOptimization()
 
     // Safety check of every feasible solution: the optimizer only checks the samples of the trajectories, a segment
     // between two samples can still cross an obstacle. Only the safe solutions can be chosen.
+    // The costs reported to the testbench are evaluated with optimization.evaluation_sample_size samples when it is set,
+    // the chosen solution is still selected with the costs of the optimizer.
     std::vector<bool> safe(pop_linedrone_filtered.size(), false);
     std::vector<pagmo::vector_double> safe_fitness;
     std::vector<size_t> safe_indexes;
+    std::vector<pagmo::vector_double> reported_fitness;
+    // optimization.evaluation_spacing (tests only): final evaluation of every solution at a resolution of the map for the
+    // reports, the optimizer and the voting keep their own evaluation
+    const double evaluation_spacing = costmap_mapping_->evaluationSpacing(
+        this->has_parameter("optimization.evaluation_spacing") ? this->get_parameter("optimization.evaluation_spacing").as_double() : 0.0);
+    std::vector<bool> resolution_valid(pop_linedrone_filtered.size(), false);
+    std::vector<Eigen::MatrixXd> resolution_samples(pop_linedrone_filtered.size());
+    reported_path_ = Eigen::MatrixXd();
     for (size_t i = 0; i < pop_linedrone_filtered.size(); i++)
     {
         nurbs_->setControlPoints(pagmoDVToControlPoints(pop_linedrone_filtered.get_x()[i]));
-        safe[i] = isPathSafe(nurbs_->evaluate());
+        Eigen::MatrixXd path = nurbs_->evaluate();
+        safe[i] = isPathSafe(path);
+        if (evaluation_spacing > 0.0)
+        {
+            pagmo::vector_double fitness;
+            resolution_valid[i] = resolutionEvaluation(pop_linedrone_filtered.get_x()[i], evaluation_spacing, resolution_samples[i], fitness);
+            reported_fitness.push_back(fitness);
+        }
+        else
+            reported_fitness.push_back(evaluationFitness(path, pop_linedrone_filtered.get_f()[i]));
         if (safe[i])
         {
             safe_fitness.push_back(pop_linedrone_filtered.get_f()[i]);
             safe_indexes.push_back(i);
         }
     }
+
+    // Report of the final evaluation: only the solutions passing it, the chosen one must pass it to be reported feasible
+    auto publishReport = [&](int chosen_idx, std::chrono::steady_clock::time_point end_time)
+    {
+        planning_end_time_ = end_time; // The publications aren't part of the planning
+        if (evaluation_spacing <= 0.0)
+        {
+            publishPlanningInfos(reported_fitness, safe, chosen_idx);
+            return;
+        }
+        std::vector<pagmo::vector_double> valid_fitness;
+        int valid_chosen_idx = -1;
+        for (size_t i = 0; i < reported_fitness.size(); ++i)
+        {
+            if (!resolution_valid[i])
+                continue;
+            if (static_cast<int>(i) == chosen_idx)
+            {
+                valid_chosen_idx = static_cast<int>(valid_fitness.size());
+                reported_path_ = resolution_samples[i];
+            }
+            valid_fitness.push_back(reported_fitness[i]);
+        }
+        if (chosen_idx >= 0 && valid_chosen_idx < 0)
+            RCLCPP_WARN(get_logger(), "ARENAOptimization => The chosen trajectory fails the final evaluation (%.3f m spacing)", evaluation_spacing);
+        publishPlanningInfos(valid_fitness, std::vector<bool>(valid_fitness.size(), true), valid_chosen_idx);
+    };
     RCLCPP_INFO(get_logger(), "ARENAOptimization => %zu / %zu feasible solutions are safe.", safe_indexes.size(), safe.size());
+
+    // optimization.export_solutions_file (analysis only): every safe solution of the final population with the costs used
+    // by the voting (optimizer), the reported costs and the clearance of its reported trajectory, to replay the voting
+    // with other weights on the same population (e.g. the risk sweep of Fig. 4)
+    const std::string export_file = this->has_parameter("optimization.export_solutions_file") ?
+        this->get_parameter("optimization.export_solutions_file").as_string() : "";
+    if (!export_file.empty())
+    {
+        auto export_start_time = std::chrono::steady_clock::now();
+        bool new_file = !std::ifstream(export_file).good();
+        std::ofstream file(export_file, std::ios::out | std::ios::app);
+        if (new_file)
+            file << "Planning,Solution,Vote time cost,Vote security cost,Vote energy cost,Time cost,Security cost,Energy cost,"
+                    "Average Closest Obstacle Distance,Min Closest Obstacle Distance\n";
+        // The solutions of the report: the ones passing the final evaluation at a resolution of the map
+        // (optimization.evaluation_spacing, on its samples), the safe ones otherwise
+        std::vector<size_t> exported_indexes;
+        for (size_t i = 0; i < pop_linedrone_filtered.size(); ++i)
+            if (evaluation_spacing > 0.0 ? static_cast<bool>(resolution_valid[i]) : static_cast<bool>(safe[i]))
+                exported_indexes.push_back(i);
+        for (size_t i : exported_indexes)
+        {
+            Eigen::MatrixXd path;
+            if (evaluation_spacing > 0.0)
+                path = resolution_samples[i];
+            else
+            {
+                nurbs_->setControlPoints(pagmoDVToControlPoints(pop_linedrone_filtered.get_x()[i]));
+                path = nurbs_->evaluate();
+                if (evaluation_nurbs_analyzer_ && path.cols() >= 2 && path.cols() < static_cast<int>(evaluation_sample_size_))
+                    path = interpolateTrajectory(path, evaluation_sample_size_);
+            }
+            const pagmo::vector_double& vote_fitness = pop_linedrone_filtered.get_f()[i];
+            double sum = 0.0, min_distance = std::numeric_limits<double>::max();
+            for (int c = 0; c < path.cols(); ++c)
+            {
+                double d = costmap_mapping_->closestObstacleDistance(path.block<3, 1>(0, c));
+                sum += d;
+                min_distance = std::min(min_distance, d);
+            }
+            file << std::fixed << std::setprecision(6) << export_counter_ << "," << i << ","
+                 << vote_fitness[0] << "," << vote_fitness[1] << "," << vote_fitness[2] << ","
+                 << reported_fitness[i][0] << "," << reported_fitness[i][1] << "," << reported_fitness[i][2] << ","
+                 << sum / path.cols() << "," << min_distance << "\n";
+        }
+        RCLCPP_INFO(get_logger(), "ARENAOptimization => %zu solutions exported to %s", exported_indexes.size(), export_file.c_str());
+        export_counter_++;
+        evaluation_time_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - export_start_time).count();
+    }
 
     if (safe_indexes.empty())
     {
@@ -951,16 +1341,14 @@ void LinedroneTestNode::ARENAOptimization()
         delete[] z_bounds;
         planning_activated_ = false;
         planning_goal_.goal_sent_ = false;
-        publishPlanningInfos(pop_linedrone_filtered.get_f(), safe, -1);
+        publishReport(-1, std::chrono::steady_clock::now());
         return;
     }
 
-    // Apply adaptive voting algorithm to select the best safe solution
-    std::vector<double> costs_weights;
-    costs_weights.push_back(this->get_parameter("optimization.adaptive_costs_weights.time").as_double());
-    costs_weights.push_back(this->get_parameter("optimization.adaptive_costs_weights.safety").as_double());
-    costs_weights.push_back(this->get_parameter("optimization.adaptive_costs_weights.energy").as_double());
-    int best_idx = static_cast<int>(safe_indexes[arena_core::adaptive_voting_algorithm::getBetterCandidateIndex(safe_fitness, costs_weights)]);
+    // Voting algorithm (optimization.voting) selecting the best safe solution with the coefficients of this planning
+    const int voted_idx = voting_algorithm_->selectCandidate(safe_fitness, voting_coefficients_);
+    int best_idx = static_cast<int>(safe_indexes[voted_idx]);
+    const auto choice_time = std::chrono::steady_clock::now();
     pagmo::vector_double best_solution = pop_linedrone_filtered.get_x()[best_idx];
 
     // Convert the best solution to control points
@@ -978,11 +1366,13 @@ void LinedroneTestNode::ARENAOptimization()
     planning_activated_ = false;
     planning_goal_.goal_sent_ = false;
 
-    publishPlanningInfos(pop_linedrone_filtered.get_f(), safe, best_idx);
+    publishReport(best_idx, choice_time);
 }
 
 void LinedroneTestNode::updateOptimizationParameters()
 {
+    updateVotingAlgorithm();
+
     // Distance between the RRT nodes of the initialization
     if (ompl_planner_ && ompl_planner_->getInitializer()->planner_)
         ompl_planner_->getInitializer()->planner_->as<ompl::geometric::RRT>()->setRange(this->get_parameter("optimization.initialization.rrt_range").as_double());
@@ -992,18 +1382,103 @@ void LinedroneTestNode::updateOptimizationParameters()
     if (population_size_ % 4 != 0)
         population_size_ += 4 - (population_size_ % 4);
 
+    // Sample size of the costs reported to the testbench, 0 (or not set): the costs of the optimizer
+    const int64_t evaluation_sample_size = this->has_parameter("optimization.evaluation_sample_size") ?
+        this->get_parameter("optimization.evaluation_sample_size").as_int() : 0;
+    if (evaluation_sample_size != static_cast<int64_t>(evaluation_sample_size_))
+    {
+        evaluation_sample_size_ = static_cast<unsigned int>(std::max<int64_t>(evaluation_sample_size, 0));
+        evaluation_nurbs_analyzer_ = nullptr;
+        if (evaluation_sample_size_ > 0)
+        {
+            arena_demos::LinedroneNurbsAnalyzerConfig evaluation_config = linedrone_config;
+            evaluation_config.base_config.sample_size = evaluation_sample_size_;
+            evaluation_nurbs_analyzer_ = std::make_shared<arena_demos::LinedroneNurbsAnalyzer>(costmap_mapping_,
+                                                                                                evaluation_config,
+                                                                                                std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>{});
+            RCLCPP_INFO(get_logger(), "The costs of the reported solutions are evaluated with %u samples", evaluation_sample_size_);
+        }
+    }
+
+    // Rejection at the first constraint violation in the analyzer of the optimizer (same fitness, faster), and its check
+    // (on by default)
+    const bool early_exit = !this->has_parameter("optimization.early_exit_on_constraint_violation") ||
+                            this->get_parameter("optimization.early_exit_on_constraint_violation").as_bool();
+    const bool verify_early_exit = this->has_parameter("optimization.verify_early_exit") &&
+                                   this->get_parameter("optimization.verify_early_exit").as_bool();
+
     unsigned int sample_size = this->get_parameter("optimization.sample_size").as_int();
-    if (sample_size == linedrone_config.base_config.sample_size && nurbs_ && nurbs_->getSampleSize() == static_cast<int>(sample_size))
+    if (sample_size == linedrone_config.base_config.sample_size && nurbs_ && nurbs_->getSampleSize() == static_cast<int>(sample_size) &&
+        early_exit == early_exit_ && verify_early_exit == verify_early_exit_)
         return;
 
+    early_exit_ = early_exit;
+    verify_early_exit_ = verify_early_exit;
     linedrone_config.base_config.sample_size = sample_size;
     if (nurbs_)
         nurbs_->setSampleSize(sample_size);
 
-    // The analyzer keeps its own copy of the configuration
+    // The analyzer keeps its own copy of the configuration. linedrone_config keeps the early exit off: the analyzer of the
+    // reported costs is built from it
+    arena_demos::LinedroneNurbsAnalyzerConfig optimizer_config = linedrone_config;
+    optimizer_config.early_exit_on_constraint_violation_ = early_exit_;
     linedrone_nurbs_analyzer_ = std::make_shared<arena_demos::LinedroneNurbsAnalyzer>(costmap_mapping_,
-                                                                                      linedrone_config,
+                                                                                      optimizer_config,
                                                                                       std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>{});
+    reference_nurbs_analyzer_ = verify_early_exit_ ?
+        std::make_shared<arena_demos::LinedroneNurbsAnalyzer>(costmap_mapping_, linedrone_config,
+                                                              std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>{}) :
+        nullptr;
+    RCLCPP_INFO(get_logger(), "Analyzer of the optimizer: early exit on constraint violation %s%s", early_exit_ ? "on" : "off",
+                verify_early_exit_ ? ", every fitness checked against the full evaluation" : "");
+}
+
+void LinedroneTestNode::updateVotingAlgorithm()
+{
+    auto doubleParam = [this](const std::string& name, double default_value)
+    { return this->has_parameter(name) ? this->get_parameter(name).as_double() : default_value; };
+
+    arena_core::VotingAlgorithmSettings settings;
+    settings.nominal_coefficients = {doubleParam("optimization.voting.nominal_coefficients.time", 1.0 / 3.0),
+                                     doubleParam("optimization.voting.nominal_coefficients.safety", 1.0 / 3.0),
+                                     doubleParam("optimization.voting.nominal_coefficients.energy", 1.0 / 3.0)};
+    settings.gain = doubleParam("optimization.voting.risk_weighted_tchebycheff.gain", settings.gain);
+    settings.augmentation = doubleParam("optimization.voting.risk_weighted_tchebycheff.augmentation", settings.augmentation);
+    const std::string algorithm = this->has_parameter("optimization.voting.algorithm") ?
+        this->get_parameter("optimization.voting.algorithm").as_string() : "risk_weighted_tchebycheff";
+    try
+    {
+        settings.type = arena_core::votingAlgorithmTypeFromString(algorithm);
+        voting_algorithm_ = arena_core::createVotingAlgorithm(settings);
+    }
+    catch (const std::invalid_argument& e)
+    {
+        RCLCPP_ERROR(get_logger(), "Invalid voting parameters (%s), the default risk weighted Tchebycheff voting is used", e.what());
+        voting_algorithm_ = arena_core::createVotingAlgorithm(arena_core::VotingAlgorithmSettings());
+    }
+
+    const bool use_risks = this->has_parameter("optimization.voting.use_risks") ?
+        this->get_parameter("optimization.voting.use_risks").as_bool() : true;
+    if (use_risks)
+    {
+        // Risks of the mission, in [0, 1]
+        auto risk = [&doubleParam](const std::string& name) { return std::clamp(doubleParam("optimization.voting.risks." + name, 0.0), 0.0, 1.0); };
+        arena_core::OperationalRisks risks{risk("wind"), risk("communication"), risk("localization"), risk("battery")};
+        voting_coefficients_ = voting_algorithm_->computeCoefficients(risks);
+        RCLCPP_INFO(get_logger(), "Voting %s, risks (wind %.2f, communication %.2f, localization %.2f, battery %.2f) => "
+                    "coefficients (time %.3f, safety %.3f, energy %.3f)", voting_algorithm_->name().c_str(), risks.wind,
+                    risks.communication, risks.localization, risks.battery, voting_coefficients_[0],
+                    voting_coefficients_[1], voting_coefficients_[2]);
+    }
+    else
+    {
+        // Fixed coefficients (tests)
+        voting_coefficients_ = {doubleParam("optimization.adaptive_costs_weights.time", 1.0),
+                                doubleParam("optimization.adaptive_costs_weights.safety", 0.0),
+                                doubleParam("optimization.adaptive_costs_weights.energy", 0.0)};
+        RCLCPP_INFO(get_logger(), "Voting %s with fixed coefficients (time %.3f, safety %.3f, energy %.3f)",
+                    voting_algorithm_->name().c_str(), voting_coefficients_[0], voting_coefficients_[1], voting_coefficients_[2]);
+    }
 }
 
 void LinedroneTestNode::publishPlanningInfos(const std::vector<pagmo::vector_double>& feasible_fitness, const std::vector<bool>& safe, int chosen_idx)
@@ -1018,20 +1493,30 @@ void LinedroneTestNode::publishPlanningInfos(const std::vector<pagmo::vector_dou
 
     if (feasible && arena_path_)
     {
-        for (int i = 0; i < arena_path_->cols(); ++i)
+        // Same samples as the reported costs, the testbench measures the clearance of the trajectory on them
+        Eigen::MatrixXd reported_path = *arena_path_;
+        if (reported_path_.cols() > 0)
+            reported_path = reported_path_; // Final evaluation at a resolution of the map
+        else if (evaluation_nurbs_analyzer_ && reported_path.cols() >= 2 && reported_path.cols() < static_cast<int>(evaluation_sample_size_))
+            reported_path = interpolateTrajectory(reported_path, evaluation_sample_size_);
+
+        for (int i = 0; i < reported_path.cols(); ++i)
         {
             geometry_msgs::msg::PoseStamped pose;
             pose.header = infos_msg.path.header;
-            pose.pose.position.x = (*arena_path_)(0, i);
-            pose.pose.position.y = (*arena_path_)(1, i);
-            pose.pose.position.z = (*arena_path_)(2, i);
+            pose.pose.position.x = reported_path(0, i);
+            pose.pose.position.y = reported_path(1, i);
+            pose.pose.position.z = reported_path(2, i);
             pose.pose.orientation.w = 1.0;
             infos_msg.path.poses.push_back(pose);
-            infos_msg.velocities.push_back((*arena_path_)(3, i));
+            infos_msg.velocities.push_back(reported_path(3, i));
         }
     }
 
-    infos_msg.planning_time = std::chrono::duration<double>(std::chrono::steady_clock::now() - planning_start_time_).count();
+    // Planning time: from the activation to the choice of the trajectory, without the evaluations of the reports
+    infos_msg.planning_time = std::chrono::duration<double>(planning_end_time_ - planning_start_time_).count() - evaluation_time_;
+    if (evaluation_time_ > 0.0)
+        RCLCPP_INFO(get_logger(), "Evaluation of the reported costs: %.1f ms (not in the planning time)", evaluation_time_ * 1.0e3);
     infos_msg.initialization_time = initialization_time_;
     infos_msg.optimization_time = optimization_time_;
     infos_msg.nb_of_control_points = nb_of_control_points_;
@@ -1065,9 +1550,10 @@ void LinedroneTestNode::publishPlanningInfos(const std::vector<pagmo::vector_dou
     infos_msg.chosen_security_cost = feasible ? feasible_fitness[chosen_idx][1] : max_cost;
     infos_msg.chosen_energy_cost = feasible ? feasible_fitness[chosen_idx][2] : max_cost;
 
-    infos_msg.time_coefficient = this->get_parameter("optimization.adaptive_costs_weights.time").as_double();
-    infos_msg.security_coefficient = this->get_parameter("optimization.adaptive_costs_weights.safety").as_double();
-    infos_msg.energy_coefficient = this->get_parameter("optimization.adaptive_costs_weights.energy").as_double();
+    // Coefficients used by the voting algorithm for this planning
+    infos_msg.time_coefficient = voting_coefficients_[0];
+    infos_msg.security_coefficient = voting_coefficients_[1];
+    infos_msg.energy_coefficient = voting_coefficients_[2];
 
     // Non-dominated solutions (pagmo needs at least 2 points to sort them)
     auto firstFront = [](const std::vector<pagmo::vector_double>& fitness) -> std::vector<pagmo::pop_size_t>

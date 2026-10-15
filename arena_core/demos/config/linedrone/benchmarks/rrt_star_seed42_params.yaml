@@ -1,0 +1,10 @@
+# RRT* benchmark planner (nodes/testbench/benchmarks/rrt_star), OMPL RRT* minimizing the path length.
+# The robot parameters, the sample size and the RRT range are the ones of ARENA (linedrone_problem_params.yaml),
+# the testbench can change the sample size and the RRT range (optimization.initialization.rrt_range).
+/**:
+    ros__parameters:
+        rrt_star:
+            time_budget: 0.9                # Planning time of RRT* in s, about the mean planning time of ARENA with its
+                                            # default hyperparameters on generated_maps/seed_42 (0.87-0.91 s)
+        benchmark:
+            speed: 0.5                      # Constant speed of the path (robot.max_speed), flown as planned

@@ -125,6 +125,15 @@ Eigen::MatrixXd BaselinePathScorer::densify(const Eigen::MatrixXd& a_points, int
     return new_path;
 }
 
+Eigen::MatrixXd BaselinePathScorer::interpolateTrajectory(const Eigen::MatrixXd& a_samples, int a_nb_of_samples)
+{
+    Eigen::MatrixXd squared_speed_samples = a_samples;
+    squared_speed_samples.row(3) = a_samples.row(3).array().square();
+    Eigen::MatrixXd interpolated = densify(squared_speed_samples, a_nb_of_samples);
+    interpolated.row(3) = interpolated.row(3).array().max(0.0).sqrt();
+    return interpolated;
+}
+
 Eigen::MatrixXd BaselinePathScorer::toControlPoints(const Eigen::MatrixXd& a_waypoints, double a_speed, double a_ramp_length) const
 {
     if (a_waypoints.cols() < 2)
@@ -157,6 +166,17 @@ Eigen::MatrixXd BaselinePathScorer::toControlPoints(const Eigen::MatrixXd& a_way
     control_points(3, 0) = 0.0;
     control_points(3, nb_of_points - 1) = 0.0;
 
+    return control_points;
+}
+
+Eigen::MatrixXd BaselinePathScorer::toControlPointsWithSpeeds(const Eigen::MatrixXd& a_path) const
+{
+    if (a_path.rows() != 4 || a_path.cols() < 2)
+        throw std::invalid_argument("BaselinePathScorer::toControlPointsWithSpeeds => the path must be 4 x K with K >= 2.");
+
+    Eigen::MatrixXd control_points = densify(a_path, degree_ + 1);
+    control_points(3, 0) = 0.0;
+    control_points(3, control_points.cols() - 1) = 0.0;
     return control_points;
 }
 
@@ -199,6 +219,92 @@ ScoredPath BaselinePathScorer::score(const Eigen::MatrixXd& a_control_points)
     return scored;
 }
 
+ScoredPath BaselinePathScorer::scoreTrajectory(const NativeTrajectory& a_trajectory, bool a_check_dynamics, int a_nb_of_samples)
+{
+    ScoredPath scored;
+    scored.native = true;
+    auto sdf = costmap_mapping_->getCapability<arena_demos::CostSDFCapability>();
+    if (a_trajectory.size() < 2 || a_nb_of_samples < 3 || !sdf)
+        return scored;
+
+    const double duration = a_trajectory.back().time - a_trajectory.front().time;
+    double energy = 0.0;
+    double max_acceleration = 0.0;
+    double max_speed = 0.0;
+    bool safe = true;
+    std::vector<double> distance(a_trajectory.size(), 0.0); // Distance along the path
+    for (size_t k = 0; k < a_trajectory.size(); ++k)
+    {
+        const TrajectoryPoint& point = a_trajectory[k];
+        max_speed = std::max(max_speed, point.velocity.norm());
+        if (k == 0)
+            continue;
+
+        const TrajectoryPoint& previous = a_trajectory[k - 1];
+        const Eigen::Vector3d displacement = point.position - previous.position;
+        const double length = displacement.norm();
+        const double dt = point.time - previous.time;
+        distance[k] = distance[k - 1] + length;
+
+        energy += transitionEnergy(previous, point);
+
+        const double velocity_change = (point.velocity - previous.velocity).norm();
+        if (dt > 1.0e-12)
+            max_acceleration = std::max(max_acceleration, velocity_change / dt);
+        else if (velocity_change > 1.0e-9)
+            max_acceleration = std::numeric_limits<double>::infinity(); // Instantaneous change of velocity
+
+        if (safe && length > 1.0e-9 && costmap_mapping_->isOccupiedRayTracing(previous.position, point.position))
+            safe = false;
+    }
+
+    // Samples at regular distances along the path, with the speed interpolated between the points
+    const double total_length = distance.back();
+    scored.samples = Eigen::MatrixXd(4, a_nb_of_samples);
+    size_t k = 1;
+    for (int i = 0; i < a_nb_of_samples; ++i)
+    {
+        const double s = total_length * i / (a_nb_of_samples - 1);
+        while (k + 1 < a_trajectory.size() && distance[k] < s)
+            ++k;
+        const double segment = distance[k] - distance[k - 1];
+        const double alpha = segment > 1.0e-12 ? std::clamp((s - distance[k - 1]) / segment, 0.0, 1.0) : 1.0;
+        scored.samples.block<3, 1>(0, i) = (1.0 - alpha) * a_trajectory[k - 1].position + alpha * a_trajectory[k].position;
+        scored.samples(3, i) = (1.0 - alpha) * a_trajectory[k - 1].velocity.norm() + alpha * a_trajectory[k].velocity.norm();
+    }
+    scored.samples.block<3, 1>(0, 0) = a_trajectory.front().position;
+    scored.samples.block<3, 1>(0, a_nb_of_samples - 1) = a_trajectory.back().position;
+
+    // Safety cost (start and goal excluded, like ARENA) and occupancy constraint
+    double total_cost = 0.0, max_cost = 0.0, max_occupancy = 0.0;
+    for (int i = 0; i < a_nb_of_samples; ++i)
+    {
+        const Eigen::Vector3d p = scored.samples.block<3, 1>(0, i);
+        if (i > 0 && i < a_nb_of_samples - 1)
+        {
+            const double cost = sdf->getCollisionCost(p);
+            total_cost += cost;
+            max_cost = std::max(max_cost, cost);
+        }
+        max_occupancy = std::max(max_occupancy, sdf->getOccupancy(p));
+    }
+
+    scored.fitness = {duration, total_cost / (a_nb_of_samples - 2) + max_cost, energy};
+    scored.max_acceleration = max_acceleration;
+    scored.max_occupancy = max_occupancy;
+    scored.max_speed = max_speed;
+    scored.length = total_length;
+    scored.safe = safe;
+
+    const double tolerance = 1.0e-6;
+    const bool constraints = std::all_of(scored.fitness.begin(), scored.fitness.end(), [](double f) { return std::isfinite(f); }) &&
+                             max_occupancy <= 0.5 && max_speed <= config_.robot_max_speed_ * (1.0 + tolerance);
+    const bool acceleration = max_acceleration <= config_.robot_max_acceleration_ * (1.0 + tolerance);
+    scored.feasible = constraints && (!a_check_dynamics || acceleration);
+    scored.physically_feasible = constraints && acceleration;
+    return scored;
+}
+
 bool BaselinePathScorer::isPathSafe(const Eigen::MatrixXd& a_samples) const
 {
     // Same check as LinedroneTestNode::isPathSafe
@@ -223,6 +329,21 @@ int BaselinePathScorer::countUnsafeSegments(const Eigen::MatrixXd& a_samples) co
             count++;
     }
     return count;
+}
+
+double BaselinePathScorer::transitionEnergy(const TrajectoryPoint& a_from, const TrajectoryPoint& a_to) const
+{
+    // Transient energy of the change of speed, steady-state power of the direction of motion during the motion
+    double energy = 0.5 * config_.robot_mass_ * std::abs(a_to.velocity.squaredNorm() - a_from.velocity.squaredNorm());
+    const double dt = a_to.time - a_from.time;
+    if (dt > 0.0)
+    {
+        const Eigen::Vector3d displacement = a_to.position - a_from.position;
+        const double length = displacement.norm();
+        const Eigen::Vector3d direction = length > 1.0e-12 ? Eigen::Vector3d(displacement / length) : Eigen::Vector3d::Zero();
+        energy += analyzer_->steadyStatePower(direction, displacement.z() < 0.0) * dt;
+    }
+    return energy;
 }
 
 double BaselinePathScorer::steadyStatePower(const Eigen::Vector3d& a_direction) const

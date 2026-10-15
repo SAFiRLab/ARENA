@@ -51,9 +51,16 @@ const std::string PLANNER_PARAM_NB_OF_GENERATIONS = "optimization.NSGA-II.genera
 const std::string PLANNER_PARAM_POPULATION_SIZE = "optimization.NSGA-II.population_size";
 const std::string PLANNER_PARAM_NURBS_SAMPLE_SIZE = "optimization.sample_size";
 const std::string PLANNER_PARAM_RRT_RANGE = "optimization.initialization.rrt_range";
+const std::string PLANNER_PARAM_EVALUATION_SAMPLE_SIZE = "optimization.evaluation_sample_size";
+const std::string PLANNER_PARAM_EVALUATION_SPACING = "optimization.evaluation_spacing";
 const std::string PLANNER_PARAM_COST_TIME = "optimization.adaptive_costs_weights.time";
 const std::string PLANNER_PARAM_COST_SAFETY = "optimization.adaptive_costs_weights.safety";
 const std::string PLANNER_PARAM_COST_ENERGY = "optimization.adaptive_costs_weights.energy";
+// Voting of the planner: algorithm, risks (coefficients computed by the algorithm) or fixed coefficients
+const std::string PLANNER_PARAM_VOTING_ALGORITHM = "optimization.voting.algorithm";
+const std::string PLANNER_PARAM_VOTING_USE_RISKS = "optimization.voting.use_risks";
+const std::string PLANNER_PARAM_RISK_PREFIX = "optimization.voting.risks.";
+const std::string PLANNER_PARAM_NOMINAL_COEFF_PREFIX = "optimization.voting.nominal_coefficients.";
 
 class TestbenchNode : public rclcpp::Node
 {
@@ -76,6 +83,11 @@ private:
 
     // Methods
     void initCSVFile();
+    // Opens a report in append mode, its header is written first when the file doesn't exist (new report, or report
+    // moved away during the tests: the following rows are then written in a new file with its own header)
+    bool openReport(std::ofstream& file, const std::string& filename, bool pareto_front);
+    void writeReportHeader(std::ofstream& file);
+    void writeParetoFrontHeader(std::ofstream& file);
     void writePlanningReport(const arena_msgs::msg::OptimizerPathInfo& msg);
     void writeRisksReport(const arena_msgs::msg::OptimizerPathInfo& msg);
     void writeParetoFront(const arena_msgs::msg::OptimizerPathInfo& msg);
@@ -99,6 +111,11 @@ private:
     void killPlanner();
     void requestPlanning();
     void setPlannerParameter(const std::string& name, const rclcpp::ParameterValue& value);
+    /** @brief Fixed coefficients (time, safety, energy) of the voting of the planner (the risks are not used). */
+    void setPlannerCoefficients(double time, double safety, double energy);
+    /** @brief Risks (battery, wind, location) of the planner, its voting algorithm computes the coefficients from them
+     * and the nominal coefficients (time, safety, energy). */
+    void setPlannerRisks(const std::vector<double>& risks, const std::vector<double>& nominal_coeffs);
     void pushPlannerParameters(const std::map<std::string, rclcpp::ParameterValue>& params);
     template <typename PublisherT>
     void waitForSubscribers(const PublisherT& pub, std::chrono::milliseconds timeout);
@@ -201,23 +218,55 @@ void TestbenchNode::initCSVFile()
     csv_filename_.append(time_string);
     csv_filename_.append(".csv");
 
-    // Open the CSV file
     std::ofstream csv_file;
-    csv_file.open(csv_filename_, std::ios::out | std::ios::app);
-    if (!csv_file.is_open()) {
-        RCLCPP_ERROR(get_logger(), "Failed to open CSV file: %s", csv_filename_.c_str());
+    if (!openReport(csv_file, csv_filename_, false))
         return;
+    RCLCPP_INFO(get_logger(), "Writing report to %s", csv_filename_.c_str());
+    csv_file.close();
+
+    // Pareto front of every planning, one row per non-dominated solution
+    pareto_front_filename_ = csv_filename_.substr(0, csv_filename_.size() - 4) + "_pareto_front.csv";
+    std::ofstream pareto_file;
+    if (!openReport(pareto_file, pareto_front_filename_, true))
+        return;
+    RCLCPP_INFO(get_logger(), "Writing Pareto fronts to %s", pareto_front_filename_.c_str());
+    pareto_file.close();
+}
+
+bool TestbenchNode::openReport(std::ofstream& file, const std::string& filename, bool pareto_front)
+{
+    std::error_code error;
+    const bool new_file = !std::filesystem::exists(filename, error) || std::filesystem::file_size(filename, error) == 0;
+
+    file.open(filename, std::ios::out | std::ios::app);
+    if (!file.is_open())
+    {
+        RCLCPP_ERROR(get_logger(), "Failed to open CSV file: %s", filename.c_str());
+        return false;
     }
 
-    RCLCPP_INFO(get_logger(), "Writing report to %s", csv_filename_.c_str());
+    if (new_file)
+    {
+        // Not the first write: the report has been moved or deleted during the tests
+        if (nurbs_infos_counter_ > 0)
+            RCLCPP_WARN(get_logger(), "%s was moved or deleted during the tests, the next rows (from Id %d) are written "
+                        "in a new file with a header", filename.c_str(), nurbs_infos_counter_);
+        if (pareto_front)
+            writeParetoFrontHeader(file);
+        else
+            writeReportHeader(file);
+    }
+    return true;
+}
 
-    // Write the header of the CSV file
+void TestbenchNode::writeReportHeader(std::ofstream& file)
+{
     if (planning_report_)
     {
         // One row per pose of the chosen path, the planning values are repeated on every row of a same Id.
         // "Time cost", "Security cost" and "Energy cost" are the costs of the chosen solution (same as "Chosen ... cost"),
         // they are set to the max double when no feasible solution has been found.
-        csv_file <<
+        file <<
         "Id" << "," <<
         "Planing Time" << "," <<
         "Number of generations" << "," <<
@@ -256,7 +305,7 @@ void TestbenchNode::initCSVFile()
     }
     else
     {
-        csv_file <<
+        file <<
         "Id" << "," <<
         "Path Duration" << "," <<
         "Average Cloest Obstacle Distance" << "," <<
@@ -275,21 +324,11 @@ void TestbenchNode::initCSVFile()
         "Chosen energy cost" <<
         std::endl;
     }
+}
 
-    csv_file.close();
-
-    // Pareto front of every planning, one row per non-dominated solution
-    pareto_front_filename_ = csv_filename_.substr(0, csv_filename_.size() - 4) + "_pareto_front.csv";
-    std::ofstream pareto_file(pareto_front_filename_, std::ios::out | std::ios::app);
-    if (!pareto_file.is_open())
-    {
-        RCLCPP_ERROR(get_logger(), "Failed to open CSV file: %s", pareto_front_filename_.c_str());
-        return;
-    }
-
-    RCLCPP_INFO(get_logger(), "Writing Pareto fronts to %s", pareto_front_filename_.c_str());
-
-    pareto_file <<
+void TestbenchNode::writeParetoFrontHeader(std::ofstream& file)
+{
+    file <<
     "Id" << "," <<
     "Number of generations" << "," <<
     "Population size" << "," <<
@@ -303,8 +342,6 @@ void TestbenchNode::initCSVFile()
     "RRT range" << "," <<
     "Safe" << "," <<
     "In generated front" << std::endl;
-
-    pareto_file.close();
 }
 
 void TestbenchNode::spinOnce()
@@ -350,7 +387,20 @@ void TestbenchNode::pushPlannerParameters(const std::map<std::string, rclcpp::Pa
     for (const auto& [name, value] : params)
         parameters.emplace_back(name, value);
 
-    std::vector<rcl_interfaces::msg::SetParametersResult> results = param_client->set_parameters(parameters);
+    // The response of a planner that just started can be lost (its service doesn't know the client yet: "failed to send
+    // response ... client will not receive response"), without timeout the testbench would wait for it forever.
+    // Setting the parameters again is harmless.
+    const int max_attempts = 10;
+    std::vector<rcl_interfaces::msg::SetParametersResult> results;
+    for (int attempt = 1; attempt <= max_attempts && rclcpp::ok(); attempt++)
+    {
+        results = param_client->set_parameters(parameters, 5s);
+        if (results.size() == parameters.size())
+            break;
+        RCLCPP_WARN(get_logger(), "No response of %s to set its parameters (attempt %i / %i)", planner_node_name_.c_str(),
+                    attempt, max_attempts);
+    }
+
     if (results.size() != parameters.size())
     {
         RCLCPP_ERROR(get_logger(), "Failed to set the parameters of %s", planner_node_name_.c_str());
@@ -371,6 +421,26 @@ void TestbenchNode::setPlannerParameter(const std::string& name, const rclcpp::P
 
     if (isPlannerRunning())
         pushPlannerParameters({{name, value}});
+}
+
+void TestbenchNode::setPlannerCoefficients(double time, double safety, double energy)
+{
+    setPlannerParameter(PLANNER_PARAM_COST_TIME, rclcpp::ParameterValue(time));
+    setPlannerParameter(PLANNER_PARAM_COST_SAFETY, rclcpp::ParameterValue(safety));
+    setPlannerParameter(PLANNER_PARAM_COST_ENERGY, rclcpp::ParameterValue(energy));
+    setPlannerParameter(PLANNER_PARAM_VOTING_USE_RISKS, rclcpp::ParameterValue(false));
+}
+
+void TestbenchNode::setPlannerRisks(const std::vector<double>& risks, const std::vector<double>& nominal_coeffs)
+{
+    setPlannerParameter(PLANNER_PARAM_RISK_PREFIX + "battery", rclcpp::ParameterValue(risks[0]));
+    setPlannerParameter(PLANNER_PARAM_RISK_PREFIX + "wind", rclcpp::ParameterValue(risks[1]));
+    setPlannerParameter(PLANNER_PARAM_RISK_PREFIX + "localization", rclcpp::ParameterValue(risks[2]));
+    setPlannerParameter(PLANNER_PARAM_RISK_PREFIX + "communication", rclcpp::ParameterValue(0.0));
+    setPlannerParameter(PLANNER_PARAM_NOMINAL_COEFF_PREFIX + "time", rclcpp::ParameterValue(nominal_coeffs[0]));
+    setPlannerParameter(PLANNER_PARAM_NOMINAL_COEFF_PREFIX + "safety", rclcpp::ParameterValue(nominal_coeffs[1]));
+    setPlannerParameter(PLANNER_PARAM_NOMINAL_COEFF_PREFIX + "energy", rclcpp::ParameterValue(nominal_coeffs[2]));
+    setPlannerParameter(PLANNER_PARAM_VOTING_USE_RISKS, rclcpp::ParameterValue(true));
 }
 
 void TestbenchNode::startPlanner()
@@ -492,9 +562,7 @@ void TestbenchNode::runStepsVariationTests(rclcpp::Rate& rate)
     double energy_coeff = 0.0;
 
     // Set the coefficients parameters
-    setPlannerParameter(PLANNER_PARAM_COST_TIME, rclcpp::ParameterValue(time_coeff));
-    setPlannerParameter(PLANNER_PARAM_COST_SAFETY, rclcpp::ParameterValue(security_coeff));
-    setPlannerParameter(PLANNER_PARAM_COST_ENERGY, rclcpp::ParameterValue(energy_coeff));
+    setPlannerCoefficients(time_coeff, security_coeff, energy_coeff);
 
     // Main loop
     while (rclcpp::ok())
@@ -543,9 +611,7 @@ void TestbenchNode::runStepsVariationTests(rclcpp::Rate& rate)
                         }
 
                         // Set the coefficients parameters
-                        setPlannerParameter(PLANNER_PARAM_COST_TIME, rclcpp::ParameterValue(time_coeff));
-                        setPlannerParameter(PLANNER_PARAM_COST_SAFETY, rclcpp::ParameterValue(security_coeff));
-                        setPlannerParameter(PLANNER_PARAM_COST_ENERGY, rclcpp::ParameterValue(energy_coeff));
+                        setPlannerCoefficients(time_coeff, security_coeff, energy_coeff);
 
                         iteration_counter = 0;
                     }
@@ -654,12 +720,17 @@ void TestbenchNode::runHyperparametersVariationTests(rclcpp::Rate& rate)
         updateNurbsSampleSize(fixedValue("nurbs_sample_size"));
     if (fixedValue("rrt_range") >= 0.0)
         updateRRTRange(fixedValue("rrt_range"));
-    if (fixedValue("cost_time") >= 0.0)
-        setPlannerParameter(PLANNER_PARAM_COST_TIME, rclcpp::ParameterValue(fixedValue("cost_time")));
-    if (fixedValue("cost_safety") >= 0.0)
-        setPlannerParameter(PLANNER_PARAM_COST_SAFETY, rclcpp::ParameterValue(fixedValue("cost_safety")));
-    if (fixedValue("cost_energy") >= 0.0)
-        setPlannerParameter(PLANNER_PARAM_COST_ENERGY, rclcpp::ParameterValue(fixedValue("cost_energy")));
+    // Fixed coefficients of the voting (the risks of the planner aren't used), -1 keeps the planner's own coefficient
+    if (fixedValue("cost_time") >= 0.0 || fixedValue("cost_safety") >= 0.0 || fixedValue("cost_energy") >= 0.0)
+    {
+        if (fixedValue("cost_time") >= 0.0)
+            setPlannerParameter(PLANNER_PARAM_COST_TIME, rclcpp::ParameterValue(fixedValue("cost_time")));
+        if (fixedValue("cost_safety") >= 0.0)
+            setPlannerParameter(PLANNER_PARAM_COST_SAFETY, rclcpp::ParameterValue(fixedValue("cost_safety")));
+        if (fixedValue("cost_energy") >= 0.0)
+            setPlannerParameter(PLANNER_PARAM_COST_ENERGY, rclcpp::ParameterValue(fixedValue("cost_energy")));
+        setPlannerParameter(PLANNER_PARAM_VOTING_USE_RISKS, rclcpp::ParameterValue(false));
+    }
 
     if (hyperparameter_name == "nb_of_generations")
     {
@@ -855,22 +926,6 @@ void TestbenchNode::runOptimalSolutionPerObjectiveTests(rclcpp::Rate& rate)
     }
 }
 
-namespace
-{
-
-// Cost coefficients of the planner from the risks (battery, wind, location) and the initial coefficients (time, safety,
-// energy), Eq. 11 of the paper without the communication risk
-std::vector<double> calculateCoeffs(const std::vector<double>& current_risks, const std::vector<double>& initial_coeffs)
-{
-    double time_coeff = initial_coeffs[0] * (1.0 - ((1.0/2.0*current_risks[1]) + (1.0/4.0*current_risks[2]) + (1.0/4.0*0.0) - current_risks[0]));
-    double safety_coeff = initial_coeffs[1] * (1.0 + ((1.0/2.0*current_risks[1]) + (1.0/4.0*current_risks[2]) + (1.0/4.0*0.0) - current_risks[0]));
-    double energy_coeff = initial_coeffs[2] * (1.0 + ((1.0/2.0*current_risks[1]) + (1.0/2.0*current_risks[0])));
-
-    return {time_coeff, safety_coeff, energy_coeff};
-}
-
-} // namespace
-
 void TestbenchNode::runRisksVarationTests(rclcpp::Rate& rate)
 {
     // Risks order: battery, wind, location
@@ -899,6 +954,18 @@ void TestbenchNode::runRiskSweepTests(rclcpp::Rate& rate)
     std::vector<double> initial_coeffs = {this->get_parameter("risk_sweep_tests.initial_coeffs.time").as_double(),
                                           this->get_parameter("risk_sweep_tests.initial_coeffs.safety").as_double(),
                                           this->get_parameter("risk_sweep_tests.initial_coeffs.energy").as_double()};
+
+    // Fixed hyperparameters of the planner (the cost weights are set by the risks), -1 keeps the planner's own value
+    auto fixedValue = [this](const std::string& name) -> double
+    { return this->get_parameter("fixed_hyperparameters." + name).as_double(); };
+    if (fixedValue("nb_of_generations") >= 0.0)
+        setPlannerParameter(PLANNER_PARAM_NB_OF_GENERATIONS, rclcpp::ParameterValue(static_cast<int64_t>(std::lround(fixedValue("nb_of_generations")))));
+    if (fixedValue("population_size") >= 0.0)
+        setPlannerParameter(PLANNER_PARAM_POPULATION_SIZE, rclcpp::ParameterValue(static_cast<int64_t>(std::lround(fixedValue("population_size")))));
+    if (fixedValue("nurbs_sample_size") >= 0.0)
+        setPlannerParameter(PLANNER_PARAM_NURBS_SAMPLE_SIZE, rclcpp::ParameterValue(static_cast<int64_t>(std::lround(fixedValue("nurbs_sample_size")))));
+    if (fixedValue("rrt_range") >= 0.0)
+        setPlannerParameter(PLANNER_PARAM_RRT_RANGE, rclcpp::ParameterValue(fixedValue("rrt_range")));
 
     const int nb_of_levels = static_cast<int>(std::lround(1.0 / step));
     std::vector<std::vector<double>> risks;
@@ -934,15 +1001,13 @@ void TestbenchNode::runRisksSchedule(rclcpp::Rate& rate, const std::vector<std::
     int pagmo_calls = 0;
     size_t risk_id = 0;
 
+    // The voting algorithm of the planner computes the coefficients from the risks (reported in the risks report)
     auto setRisks = [this, &risks, &initial_coeffs](size_t id)
     {
         current_risks_ = risks[id];
-        std::vector<double> coeffs = calculateCoeffs(risks[id], initial_coeffs[id]);
-        RCLCPP_INFO(get_logger(), "Risks (battery, wind, location): %.2f, %.2f, %.2f, coeffs: time: %f, safety: %f, energy: %f",
-                    risks[id][0], risks[id][1], risks[id][2], coeffs[0], coeffs[1], coeffs[2]);
-        setPlannerParameter(PLANNER_PARAM_COST_TIME, rclcpp::ParameterValue(coeffs[0]));
-        setPlannerParameter(PLANNER_PARAM_COST_SAFETY, rclcpp::ParameterValue(coeffs[1]));
-        setPlannerParameter(PLANNER_PARAM_COST_ENERGY, rclcpp::ParameterValue(coeffs[2]));
+        RCLCPP_INFO(get_logger(), "Risks (battery, wind, location): %.2f, %.2f, %.2f, nominal coeffs: time: %f, safety: %f, energy: %f",
+                    risks[id][0], risks[id][1], risks[id][2], initial_coeffs[id][0], initial_coeffs[id][1], initial_coeffs[id][2]);
+        setPlannerRisks(risks[id], initial_coeffs[id]);
     };
     setRisks(risk_id);
 
@@ -1093,11 +1158,9 @@ void TestbenchNode::nurbsInfosCallback(const arena_msgs::msg::OptimizerPathInfo:
 
 void TestbenchNode::writePlanningReport(const arena_msgs::msg::OptimizerPathInfo& msg)
 {
-    std::ofstream csv_file(csv_filename_, std::ios::out | std::ios::app);
-    if (!csv_file.is_open()) {
-        RCLCPP_ERROR(get_logger(), "Failed to open CSV file: %s", csv_filename_.c_str());
+    std::ofstream csv_file;
+    if (!openReport(csv_file, csv_filename_, false))
         return;
-    }
 
     // Values shared by every row of this planning
     std::ostringstream planning_values;
@@ -1161,11 +1224,9 @@ void TestbenchNode::writePlanningReport(const arena_msgs::msg::OptimizerPathInfo
 
 void TestbenchNode::writeParetoFront(const arena_msgs::msg::OptimizerPathInfo& msg)
 {
-    std::ofstream pareto_file(pareto_front_filename_, std::ios::out | std::ios::app);
-    if (!pareto_file.is_open()) {
-        RCLCPP_ERROR(get_logger(), "Failed to open CSV file: %s", pareto_front_filename_.c_str());
+    std::ofstream pareto_file;
+    if (!openReport(pareto_file, pareto_front_filename_, true))
         return;
-    }
 
     auto writeRow = [&](double time_cost, double security_cost, double energy_cost, bool safe, bool in_generated_front)
     {
@@ -1217,11 +1278,8 @@ void TestbenchNode::writeRisksReport(const arena_msgs::msg::OptimizerPathInfo& m
 
     // Open the CSV file in append mode or create a new file
     std::ofstream csv_file;
-    csv_file.open(csv_filename_, std::ios::out | std::ios::app);
-    if (!csv_file.is_open()) {
-        RCLCPP_ERROR(get_logger(), "Failed to open CSV file: %s", csv_filename_.c_str());
+    if (!openReport(csv_file, csv_filename_, false))
         return;
-    }
 
     // Write the data to the CSV file
     const nav_msgs::msg::Path& path_msg = msg.path;
@@ -1692,6 +1750,16 @@ costmap_(nullptr)
 
     this->declare_parameter<double>("optimal_solution_per_objective_tests.nb_of_iter", 0.0);
 
+    // Sample size of the trajectories reported by the planner, every test: its samples are linearly interpolated up to this
+    // size and its costs evaluated again, so that the trajectories of every planner and sample size are compared on the
+    // same samples (the reference front). <= 0: the planner's own samples
+    this->declare_parameter<double>("evaluation_sample_size", 0.0);
+    // Final evaluation of the reported trajectories at this spacing along them (< 0: half the octomap resolution, 0: off)
+    this->declare_parameter<double>("evaluation_spacing", -1.0);
+
+    // Voting algorithm of the planner (rank or risk_weighted_tchebycheff), "planner": the planner's own algorithm
+    this->declare_parameter<std::string>("voting_algorithm", "planner");
+
     // Risk sweep tests: every risk from 0 to 1 by step, optimal_solution_per_objective_tests.nb_of_iter plannings per level
     this->declare_parameter<double>("risk_sweep_tests.step", 0.1);
     this->declare_parameter<double>("risk_sweep_tests.initial_coeffs.time", 0.33);
@@ -1765,6 +1833,17 @@ costmap_(nullptr)
     std_msgs::msg::Int32 counter_msg;
     counter_msg.data = path_planning_finished_counter_;
     path_planning_finished_counter_pub_->publish(counter_msg);
+
+    // Pushed to the planner every time it starts
+    // Voting algorithm of the planner (rank or risk_weighted_tchebycheff), "planner" keeps the planner's own algorithm
+    const std::string voting_algorithm = this->get_parameter("voting_algorithm").as_string();
+    if (voting_algorithm != "planner")
+        setPlannerParameter(PLANNER_PARAM_VOTING_ALGORITHM, rclcpp::ParameterValue(voting_algorithm));
+
+    int evaluation_sample_size = static_cast<int>(this->get_parameter("evaluation_sample_size").as_double());
+    if (evaluation_sample_size > 0)
+        setPlannerParameter(PLANNER_PARAM_EVALUATION_SAMPLE_SIZE, rclcpp::ParameterValue(static_cast<int64_t>(evaluation_sample_size)));
+    setPlannerParameter(PLANNER_PARAM_EVALUATION_SPACING, rclcpp::ParameterValue(this->get_parameter("evaluation_spacing").as_double()));
 
     planning_report_ = steps_variation_tests_ || hyperparameters_variation_tests_;
     initCSVFile();

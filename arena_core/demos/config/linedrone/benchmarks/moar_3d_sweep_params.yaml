@@ -1,15 +1,20 @@
-# MOAR-3D benchmark planner in weight sweep mode (see moar_3d_params.yaml): one A* search per weight set of the simplex,
-# the solutions are reported like a Pareto front (scalarization of the multi-objective problem)
+# MOAR-3D benchmark planner in weight sweep mode (nodes/testbench/benchmarks/moar_3d, mode moar_weight_sweep): one MOAR
+# search per coefficient set (k_S, k_T, k_E) of the simplex, the solutions are reported like a Pareto front.
+# The robot parameters and the sample size are the ones of ARENA (linedrone_problem_params.yaml).
 /**:
     ros__parameters:
         moar_3d:
-            mode: "weight_sweep"
-            sweep_step: 0.1                 # 66 weight sets
-            grid_resolution: 1.0
-            clearance: 0.8
-            waypoint_spacing: 2.0
-            length_cost: 0.001
-        benchmark:
-            nurbs_degree: 5
-            speed: 0.5
-            speed_ramp_length: 0.0
+            mode: "moar_weight_sweep"
+            sweep_step: 0.1                 # Step of the coefficients on the simplex (66 sets)
+            grid_resolution: 1.0            # Size of the grid cells in m (resolution of the octomaps of the tests)
+            clearance: 0.8                  # Valid cells: same clearance as the RRT of ARENA (OMPLStateValidityChecker)
+            sdf_min_distance: 2.0           # d_min and d_max of the collision cost C(d) of the SDF octomap
+            sdf_max_distance: 9.0           # (costmap_3D_params.yaml obstacle_influence_distance)
+            speeds:                         # Speeds of the MOAR implementation relative to the horizontal cruising speed
+                min_ratio: 0.8333           # v_MIN = 0.5 / 0.6
+                up_ratio: 0.9667            # 0.58 / 0.6
+                diagonal_up_ratio: 0.95     # 0.57 / 0.6
+                diagonal_down_ratio: 0.9667 # 0.58 / 0.6
+                down_ratio: 0.95            # 0.57 / 0.6
+                d_min: 2.0                  # v_sat = v_MIN below this obstacle distance (m)
+                d_max: 4.0                  # v_sat = v_MAX above this obstacle distance (m, d_max_speed of MOAR)

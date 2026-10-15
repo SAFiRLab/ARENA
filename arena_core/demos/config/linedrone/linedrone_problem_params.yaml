@@ -20,6 +20,7 @@
                 rrt_range: 5.0                        # Distance between nodes in the RRT
                 initial_speed_ratio: 1.0              # Seed speed of the RRT paths / robot.max_speed (was 0.5 before 2026-10-07)
             sample_size: 50                      # Number of points along a curve
+            early_exit_on_constraint_violation: true # The evaluation stops at the first constraint violation (same fitness, faster)
             NSGA-II:
                 population_size: 40                     # Number of individuals in the population
                 generations: 1000                      # Number of generations
@@ -28,7 +29,22 @@
                 crossover_params:
                     distribution_index: 20.0             # Distribution index of the crossover
                     probability: 0.9                     # Probability of crossover
-            adaptive_costs_weights:
+            voting:
+                algorithm: risk_weighted_tchebycheff   # risk_weighted_tchebycheff or rank
+                use_risks: true                        # true: coefficients computed from the risks by the algorithm, false: adaptive_costs_weights
+                risks:                                 # Operational risks in [0, 1] (0: nominal, 1: critical)
+                    wind: 0.0
+                    communication: 0.0
+                    localization: 0.0
+                    battery: 0.0
+                nominal_coefficients:                  # Coefficients without risk (k_j,0)
+                    time: 0.333333
+                    safety: 0.333333
+                    energy: 0.333333
+                risk_weighted_tchebycheff:
+                    gain: 2.0                          # beta
+                    augmentation: 0.001                # epsilon of the augmented Tchebycheff
+            adaptive_costs_weights:                    # Fixed coefficients, used when voting.use_risks is false
                 time: 1.0                            # Weight of the time cost
                 safety: 0.0                        # Weight of the safety cost
                 energy: 0.0                          # Weight of the energy cost

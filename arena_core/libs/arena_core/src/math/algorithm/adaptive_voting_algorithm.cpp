@@ -236,6 +236,63 @@ int getBetterCandidateIndex(const std::vector<std::vector<double>>& a_population
     return std::distance(weighted_ranks.begin(), best_candidate);
 }
 
+int getTchebycheffCandidateIndex(const std::vector<std::vector<double>>& a_population_fitness_values,
+                                 const std::vector<double>& a_fitness_coefficients, double a_rho)
+{
+    if (a_population_fitness_values.empty())
+        throw std::invalid_argument("arena_core::adaptive_voting_algorithm::getTchebycheffCandidateIndex() -> Population cannot be empty.");
+
+    const auto expected_size = a_population_fitness_values[0].size();
+    if (expected_size == 0)
+        throw std::invalid_argument("arena_core::adaptive_voting_algorithm::getTchebycheffCandidateIndex() -> Fitness values cannot be empty.");
+
+    if (a_fitness_coefficients.size() != expected_size)
+        throw std::invalid_argument("arena_core::adaptive_voting_algorithm::getTchebycheffCandidateIndex() -> Fitness coefficients size must match the number of fitness values.");
+
+    if (std::any_of(a_fitness_coefficients.begin(), a_fitness_coefficients.end(), [](double coeff) { return coeff < 0; }))
+        throw std::invalid_argument("arena_core::adaptive_voting_algorithm::getTchebycheffCandidateIndex() -> All fitness coefficients must be non-negative.");
+
+    if (std::all_of(a_fitness_coefficients.begin(), a_fitness_coefficients.end(), [](double coeff) { return coeff == 0; }))
+        throw std::invalid_argument("arena_core::adaptive_voting_algorithm::getTchebycheffCandidateIndex() -> At least one fitness coefficient must be non-zero.");
+
+    // Minimum and maximum of every objective over the candidates
+    std::vector<double> min_values(expected_size, std::numeric_limits<double>::max());
+    std::vector<double> max_values(expected_size, std::numeric_limits<double>::lowest());
+    for (const auto& fitness : a_population_fitness_values)
+    {
+        if (fitness.size() != expected_size)
+            throw std::invalid_argument("arena_core::adaptive_voting_algorithm::getTchebycheffCandidateIndex() -> All candidates must have the same number of fitness values.");
+        for (size_t j = 0; j < expected_size; ++j)
+        {
+            min_values[j] = std::min(min_values[j], fitness[j]);
+            max_values[j] = std::max(max_values[j], fitness[j]);
+        }
+    }
+
+    int best_index = 0;
+    double best_score = std::numeric_limits<double>::max();
+    for (size_t i = 0; i < a_population_fitness_values.size(); ++i)
+    {
+        double max_term = 0.0;
+        double sum_term = 0.0;
+        for (size_t j = 0; j < expected_size; ++j)
+        {
+            const double range = max_values[j] - min_values[j];
+            const double normalized = range > 0.0 ? (a_population_fitness_values[i][j] - min_values[j]) / range : 0.0;
+            max_term = std::max(max_term, a_fitness_coefficients[j] * normalized);
+            sum_term += a_fitness_coefficients[j] * normalized;
+        }
+        const double score = max_term + a_rho * sum_term;
+        if (score < best_score)
+        {
+            best_score = score;
+            best_index = static_cast<int>(i);
+        }
+    }
+
+    return best_index;
+}
+
 }; // adaptive_voting_algorithm
 
 }; // arena_core

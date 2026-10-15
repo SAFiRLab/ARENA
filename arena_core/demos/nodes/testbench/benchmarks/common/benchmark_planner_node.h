@@ -44,6 +44,7 @@
 #include "linedrone/costmap_mapping.h"
 #include "linedrone/linedrone_nurbs_analyzer.h"
 #include "testbench/benchmarks/common/baseline_path_scorer.h"
+#include "arena_core/math/algorithm/voting_algorithm.h"
 
 // System
 #include <chrono>
@@ -82,11 +83,11 @@ struct PlanningResult
  *     - subscriptions: goal_pose, drone_pose, planning_activation, /navigation/inflated_octomap/full,
  *       /navigation/sdf_octomap/full
  *     - publications: nurbs_infos (arena_msgs/OptimizerPathInfo), path_planning_finished, arena_path, solution_set
- *     - parameters: robot.*, optimization.sample_size, optimization.adaptive_costs_weights.* (and the parameters of
- *       every planner)
+ *     - parameters: robot.*, optimization.sample_size, optimization.evaluation_sample_size, optimization.voting.*,
+ *       optimization.adaptive_costs_weights.* (and the parameters of every planner)
  *
  * The planners only return their trajectories (plan()), this node evaluates them with BaselinePathScorer, chooses one
- * with the adaptive voting algorithm among the feasible and safe ones (like ARENA) and reports them like ARENA.
+ * with the voting algorithm of ARENA (optimization.voting) among the feasible and safe ones and reports them like ARENA.
  */
 class BenchmarkPlannerNode : public rclcpp::Node
 {
@@ -114,11 +115,35 @@ protected:
         return this->get_parameter(a_name).get_value<T>();
     }
 
-    /** @brief Weights of the time, safety and energy costs (optimization.adaptive_costs_weights.*). */
-    std::vector<double> getCostsWeights();
+    /**
+     * @brief Coefficients (time, safety, energy) of the voting: computed by the voting algorithm from the risks with
+     * optimization.voting.use_risks, the fixed coefficients (getFixedCoefficients()) otherwise.
+     */
+    arena_core::ObjectiveCoefficients getCostsWeights();
+
+    /** @brief Whether the coefficients are computed from the risks (optimization.voting.use_risks, default false). */
+    bool votingUsesRisks();
+
+    /** @brief Risks of the mission (optimization.voting.risks.*), clamped to [0, 1]. */
+    arena_core::OperationalRisks getOperationalRisks();
+
+    /** @brief Fixed coefficients of the tests (optimization.adaptive_costs_weights.*). */
+    arena_core::ObjectiveCoefficients getFixedCoefficients();
+
+    /** @brief Settings of the voting algorithm (optimization.voting.*). */
+    arena_core::VotingAlgorithmSettings getVotingSettings();
 
     /** @brief Scorer of the trajectories, rebuilt when the sample size parameter changes. */
     BaselinePathScorer& scorer() { return *scorer_; }
+
+    /**
+     * @brief Evaluates a trajectory of the planner as it is (BaselinePathScorer::scoreTrajectory). The samples are spaced
+     * by optimization.evaluation_spacing (< 0: half the resolution of the octomap, so a longer trajectory has more samples),
+     * otherwise benchmark.evaluation_samples samples (default: optimization.evaluation_sample_size, 250 if not set).
+     * The time of this evaluation isn't part of the planning time.
+     * @param a_check_dynamics Check the acceleration (planners with dynamics only).
+     */
+    ScoredPath scoreTrajectory(const NativeTrajectory& a_trajectory, bool a_check_dynamics);
 
     std::shared_ptr<arena_demos::CostmapMapping> costmap_mapping_;
     arena_demos::LinedroneNurbsAnalyzerConfig linedrone_config_;
@@ -127,7 +152,26 @@ private:
 
     void run();
     void updateScorer();
+
+    /** @brief Analyzer of the reported costs, rebuilt when optimization.evaluation_sample_size changes (null: 0). */
+    void updateEvaluation();
+
+    /**
+     * @brief Trajectories reported to the testbench with optimization.evaluation_sample_size samples (tests only), like
+     * LinedroneTestNode::evaluationFitness: the samples of every feasible solution are interpolated up to this size
+     * (BaselinePathScorer::interpolateTrajectory) and its costs evaluated again (the constraints aren't checked again). The choice of the trajectory is made
+     * before, with the costs of the planner.
+     */
+    void evaluateForReport(PlanningResult& a_result);
     void publishPlanningInfos(const PlanningResult& a_result, int a_chosen_idx);
+
+    /**
+     * @brief benchmark.status_file (analysis only): one line per planning with its completion (the planner returned at
+     * least one trajectory reaching the goal) and the number of trajectories respecting the constraints, the safety
+     * check, and both, and the number of safe trajectories respecting all the physical constraints of the robot (the
+     * acceleration included, ScoredPath::physically_feasible).
+     */
+    void writeStatus(const PlanningResult& a_result, int a_chosen_idx);
     void publishPaths(const PlanningResult& a_result, int a_chosen_idx);
 
     // ROS Subscriptions Callbacks
@@ -153,7 +197,14 @@ private:
     rclcpp::TimerBase::SharedPtr run_timer_;
 
     std::shared_ptr<BaselinePathScorer> scorer_;
+    std::shared_ptr<arena_demos::LinedroneNurbsAnalyzer> evaluation_analyzer_;
+    unsigned int evaluation_sample_size_ = 0;
+    double evaluation_time_ = 0.0; // s, evaluation of the reported costs (tests only), not part of the planning time
+    double scoring_time_ = 0.0;    // s, scoreTrajectory() during plan(), not part of the planning time
     std::chrono::steady_clock::time_point planning_start_time_;
+    std::chrono::steady_clock::time_point planning_end_time_; // After the choice of the trajectory
+    int export_counter_ = 0; // Plannings written in optimization.export_solutions_file
+    int status_counter_ = 0; // Plannings written in benchmark.status_file
     bool planning_activated_ = false;
     bool goal_sent_ = false;
     bool octree_received_ = false;

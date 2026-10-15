@@ -23,8 +23,8 @@
 # The population size is the upper bound of the number of solutions of the final front.
 # NSGA-II needs a population size divisible by 4, the planner rounds it up (250 -> 252).
 #
-# Duration: about 45 s per run on a Ryzen 9 7950X (planning time model fitted on the sweeps, +40 % for the 2 m RRT
-# range), so about 6-7 h for 500 runs.
+# Duration: about 45 s per run on a Ryzen 9 7950X with 50 samples (planning time model fitted on the sweeps, +40 % for
+# the 2 m RRT range), so about 6-7 h for 500 runs. With 250 samples, the reference front of seed_42 took about 14 h.
 
 source "$(dirname "$(readlink -f "$0")")/../../terminal_utils.sh"
 
@@ -35,7 +35,8 @@ map_name="map_test_3"
 rrt_range=2.0
 nb_of_generations=5000
 population_size=250
-nurbs_sample_size=50
+# Same sample size as the evaluation of the costs of the sweeps (evaluation_sample_size of hyperparameters_variation/*.sh)
+nurbs_sample_size=250
 num_iter=500
 
 trap 'trap - INT TERM; stop_testbench_nodes; exit 1' INT TERM

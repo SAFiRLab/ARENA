@@ -31,27 +31,51 @@
  */
 
 /**
- * MOAR-3D benchmark planner: 3D re-implementation of the MOAR planner (Petit and Desbiens, ICRA 2024).
- *
- * MOAR combines the time, safety and energy costs in a single weighted cost, the weights being adapted to the mission
- * risks, and finds the path of minimal cost with a graph search. MOAR searches a 2D graph, this version searches a 3D
- * grid (26-connectivity) with A*. The cost of an edge of length l in the direction d ending in the cell c is
- *     l * (w_T + w_S * sdf_cost(c) + w_E * P(d) / P_max) (+ a small length cost so null weights don't make detours)
- * with the per-meter costs normalized to [0, 1]: time (constant speed), SDF safety cost of ARENA, steady-state power of
- * the energy model of ARENA divided by its maximum over the grid directions. With w = (1, 0, 0) it is a plain A*.
+ * MOAR-3D benchmark planner: the MOAR planner (Petit and Desbiens, "MOAR Planner: Multi-Objective and Adaptive Risk-Aware
+ * Path Planning for Infrastructure Inspection with a UAV", ICRA 2024) extended from its 2D plane to 3D, and the A*
+ * benchmark of the same paper.
  *
  * Modes (moar_3d.mode):
- *     single: one search with the weights optimization.adaptive_costs_weights.* (set by the testbench, e.g. from the risks)
- *     weight_sweep: one search per weight set of the simplex with a step of moar_3d.sweep_step, the solutions are reported
- *                   like a Pareto front and the adaptive voting algorithm chooses one, like ARENA
+ *     astar: A* minimizing the path length on the grid (benchmark "A*" of the MOAR paper), flown at benchmark.speed
+ *     moar: MOAR graph search (MoarGraphSearch) with the coefficients k_T, k_S, k_E of Eq. 9 of MOAR (Eq. 11 of the
+ *           first ARENA submission, arena_core::RankVotingAlgorithm) computed from the risks optimization.voting.risks.*
+ *           and the nominal coefficients optimization.voting.nominal_coefficients.* with optimization.voting.use_risks,
+ *           given by optimization.adaptive_costs_weights.{time, safety, energy} otherwise. The normalization factor
+ *           gamma doesn't change the optimal path.
+ *     moar_weight_sweep: one MOAR search per coefficient set of the simplex (step moar_3d.sweep_step), the solutions are
+ *           reported like a Pareto front and the voting algorithm of ARENA (optimization.voting) chooses one
  *
+ * As in the paper and its implementation (MOPP): A* on states (cell, direction of flight), every action of Fig. 5 including
+ * the static action "0" (stop in the cell: branch length of a diagonal step, time cost of 1 at a null speed, velocity
+ * change to stop), costs of Eq. 7 (SC d, TC = d / v(d_obs, theta), EC = ||v_i - v_i-1|| / (2 v_MAX)), heuristic of Eq. 8,
+ * speeds v = min(v_sat(d_obs), v_max,theta) with the maximum speed variation function v_sat of Eq. 5 (d_min of the
+ * collision cost, moar_3d.speeds.d_max = d_max_speed of the implementation), coefficients of Eq. 9 (with the adaptation of
+ * k_E and the normalization gamma of the paper; the implementation keeps k_E constant).
+ *
+ * Differences with the 2D MOAR planner, needed to run it on the 3D octomaps of ARENA:
+ *     - 3D grid of moar_3d.grid_resolution with 26 motion primitives (+ the static action) instead of 8 (+ static) in 2D
+ *     - the safety cost of a cell is the collision cost C(d_obs) only (k_a = 1 in Eq. 2). C is the potential function of MOAR
+ *       (Eq. 3, computeCollisionCost of the implementation), read from the SDF octomap of ARENA (same function, d_min and
+ *       d_max of the costmap, shared with ARENA's safety cost). The insertion (convex hull)
+ *       and damage costs of MOAR need the semantics of a power line (inspected structure, conductors below the drone) that
+ *       the octomaps don't have, and ARENA doesn't use its own insertion cost in these tests either.
+ *     - the obstacle distance d_obs of the speed function (Eq. 5) is computed back from the SDF cost
+ *     - the speeds are the ones of the MOAR implementation (minimum, horizontal and directional cruising speeds) scaled to
+ *       the maximum speed of the robot (robot.max_speed is the horizontal cruising speed v_MAX)
  * The cells are valid like the states of the RRT of ARENA (no occupied voxel of the inflated octomap closer than
- * moar_3d.clearance on every axis). The path goes through the cell centers, it is resampled every
- * moar_3d.waypoint_spacing meters to give the control points of the NURBS curve evaluated like the trajectories of ARENA.
+ * moar_3d.clearance on every axis).
+ *
+ * Trajectories, as planned (like the nav_msgs/Path of the cell centers published by the MOAR implementation): the path goes
+ * through the cell centers (the start and the goal replace the centers of their cells), every segment is flown at the
+ * speed planned by MOAR (A*: the constant speed benchmark.speed), the speed changes instantaneously at the cell centers
+ * (MOAR assumes the cruising speed is reached quickly). They are evaluated with the cost models of ARENA
+ * (BenchmarkPlannerNode::scoreTrajectory, the acceleration isn't checked).
  */
 
 // Local
 #include "common/benchmark_planner_node.h"
+#include "testbench/benchmarks/moar_3d/moar_graph_search.h"
+#include "testbench/benchmarks/moar_3d/moar_graph_setup.h"
 #include "testbench/benchmarks/moar_3d/weighted_astar_3d.h"
 
 // System
@@ -75,117 +99,138 @@ protected:
 
     void plan(const Eigen::Vector3d& a_start, const Eigen::Vector3d& a_goal, PlanningResult& a_result) override
     {
-        const std::string mode = param<std::string>("moar_3d.mode", "single");
-        const double resolution = param<double>("moar_3d.grid_resolution", 1.0);
-        const double clearance = param<double>("moar_3d.clearance", 0.8);
-        const double waypoint_spacing = param<double>("moar_3d.waypoint_spacing", 2.0);
-        const double length_cost = param<double>("moar_3d.length_cost", 1.0e-3);
-        const double speed = param<double>("benchmark.speed", linedrone_config_.robot_max_speed_);
-        const double ramp_length = param<double>("benchmark.speed_ramp_length", 0.0);
+        const std::string mode = param<std::string>("moar_3d.mode", "moar");
+        a_result.rrt_range = param<double>("moar_3d.grid_resolution", 1.0);
 
-        // Grid on the map, the cells are rebuilt when the map bounds or the resolution change
+        if (mode == "astar")
+            planAStar(a_start, a_goal, a_result);
+        else if (mode == "moar" || mode == "moar_weight_sweep")
+            planMoar(a_start, a_goal, mode == "moar_weight_sweep", a_result);
+        else
+            throw std::runtime_error("Unknown moar_3d.mode " + mode + " (astar, moar or moar_weight_sweep)");
+    }
+
+private:
+
+    /** @brief Grid configuration on the map bounds, true if it changed since the last planning. */
+    bool gridConfig(double& a_resolution, Eigen::Vector3d& a_min, Eigen::Vector3d& a_max)
+    {
+        a_resolution = param<double>("moar_3d.grid_resolution", 1.0);
         Eigen::MatrixXd bounds = costmap_mapping_->getMapBounds();
+        a_min = bounds.row(0).transpose();
+        a_max = bounds.row(1).transpose();
+        bool changed = a_resolution != resolution_ || !a_min.isApprox(min_bounds_) || !a_max.isApprox(max_bounds_);
+        resolution_ = a_resolution;
+        min_bounds_ = a_min;
+        max_bounds_ = a_max;
+        return changed;
+    }
+
+    void planAStar(const Eigen::Vector3d& a_start, const Eigen::Vector3d& a_goal, PlanningResult& a_result)
+    {
+        const double clearance = param<double>("moar_3d.clearance", 0.8);
+        const double speed = param<double>("benchmark.speed", linedrone_config_.robot_max_speed_);
+
         WeightedAStar3DConfig config;
-        config.resolution = resolution;
-        config.min_bounds = bounds.row(0).transpose();
-        config.max_bounds = bounds.row(1).transpose();
-        if (!astar_ || astar_->getConfig().resolution != resolution || !astar_->getConfig().min_bounds.isApprox(config.min_bounds) ||
-            !astar_->getConfig().max_bounds.isApprox(config.max_bounds))
+        bool changed = gridConfig(config.resolution, config.min_bounds, config.max_bounds);
+        if (!astar_ || changed)
         {
             auto mapping = costmap_mapping_;
             astar_ = std::make_unique<WeightedAStar3D>(config, [mapping, clearance](const Eigen::Vector3d& p)
                                                        { return mapping->isClearance(p, clearance); });
         }
         else
-        {
-            // The map is received again before every planning, the validity is computed again like the RRT of ARENA
-            astar_->clearCache();
-        }
+            astar_->clearCache(); // The map is received again before every planning, like the RRT of ARENA
+
+        // Shortest path: cost and admissible heuristic are the euclidean length
+        auto length = [](const Eigen::Vector3d& from, const Eigen::Vector3d& to) { return (to - from).norm(); };
+
+        std::vector<Eigen::Vector3d> path;
+        WeightedAStar3DStats stats;
+        auto start_time = std::chrono::steady_clock::now();
+        bool found = astar_->search(a_start, a_goal, length, length, path, &stats);
+        a_result.initialization_time = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
+        RCLCPP_INFO(get_logger(), "A*: %s in %.3f s, %zu expansions, length %.2f m", found ? "path found" : "no path",
+                    a_result.initialization_time, stats.nb_of_expansions, stats.cost);
+        if (!found)
+            return;
+
+        // Path of the cell centers flown at a constant speed
+        a_result.solutions.push_back(scoreTrajectory(constantSpeedTrajectory(path, speed), false));
+        a_result.nb_of_control_points = static_cast<int>(path.size());
+    }
+
+    void planMoar(const Eigen::Vector3d& a_start, const Eigen::Vector3d& a_goal, bool a_sweep, PlanningResult& a_result)
+    {
+        const double clearance = param<double>("moar_3d.clearance", 0.8);
+        const double sdf_d_min = param<double>("moar_3d.sdf_min_distance", 2.0);
+        const double sdf_d_max = param<double>("moar_3d.sdf_max_distance", 9.0);
+        const MoarSpeeds speeds = moarSpeeds(linedrone_config_.robot_max_speed_,
+                                             [this](const std::string& name, double value) { return param<double>(name, value); });
 
         auto sdf = costmap_mapping_->getCapability<arena_demos::CostSDFCapability>();
         if (!sdf)
             throw std::runtime_error("The SDF octomap is not available");
 
-        // Steady-state power in the 26 directions of the grid, normalized by its maximum
-        double max_power = 0.0, min_power = std::numeric_limits<double>::max();
-        for (int dx = -1; dx <= 1; ++dx)
-            for (int dy = -1; dy <= 1; ++dy)
-                for (int dz = -1; dz <= 1; ++dz)
-                {
-                    if (dx == 0 && dy == 0 && dz == 0)
-                        continue;
-                    double power = scorer().steadyStatePower(Eigen::Vector3d(dx, dy, dz));
-                    max_power = std::max(max_power, power);
-                    min_power = std::min(min_power, power);
-                }
+        MoarGraphConfig config;
+        bool changed = gridConfig(config.resolution, config.min_bounds, config.max_bounds);
+        if (!moar_ || changed)
+            moar_ = std::make_unique<MoarGraphSearch>(config, moarCellFn(costmap_mapping_, sdf, clearance, sdf_d_min, sdf_d_max));
+        else
+            moar_->clearCache();
 
-        std::vector<std::vector<double>> weight_sets;
-        if (mode == "weight_sweep")
+        // Coefficients (k_S, k_T, k_E), normalized to a sum of 1 (gamma in Eq. 9)
+        std::vector<MoarWeights> weight_sets;
+        if (a_sweep)
         {
             const int steps = std::max(1, static_cast<int>(std::lround(1.0 / param<double>("moar_3d.sweep_step", 0.1))));
             for (int i = 0; i <= steps; ++i)
                 for (int j = 0; j <= steps - i; ++j)
-                    weight_sets.push_back({static_cast<double>(i) / steps, static_cast<double>(j) / steps,
+                    weight_sets.push_back({static_cast<double>(j) / steps, static_cast<double>(i) / steps,
                                            static_cast<double>(steps - i - j) / steps});
         }
-        else if (mode == "single")
-            weight_sets.push_back(getCostsWeights());
         else
-            throw std::runtime_error("Unknown moar_3d.mode " + mode + " (single or weight_sweep)");
+        {
+            // Eq. 9 of MOAR from the risks, or the fixed coefficients (time, safety, energy)
+            const arena_core::ObjectiveCoefficients w = votingUsesRisks() ?
+                arena_core::RankVotingAlgorithm(getVotingSettings().nominal_coefficients).computeCoefficients(getOperationalRisks()) :
+                getFixedCoefficients();
+            double sum = w[0] + w[1] + w[2];
+            if (sum <= 0.0)
+                weight_sets.push_back(MoarWeights());
+            else
+                weight_sets.push_back({w[1] / sum, w[0] / sum, w[2] / sum});
+        }
 
         double search_time = 0.0;
-        for (std::vector<double> weights : weight_sets)
+        for (const MoarWeights& weights : weight_sets)
         {
-            // Only the ratios of the weights matter
-            double sum = weights[0] + weights[1] + weights[2];
-            if (sum <= 0.0)
-                weights = {1.0, 0.0, 0.0};
-            else
-                for (double& w : weights)
-                    w /= sum;
-
-            auto edge_cost = [&](const Eigen::Vector3d& from, const Eigen::Vector3d& to) -> double
-            {
-                Eigen::Vector3d displacement = to - from;
-                double length = displacement.norm();
-                double energy = weights[2] > 0.0 ? scorer().steadyStatePower(displacement) / max_power : 0.0;
-                double safety = weights[1] > 0.0 ? sdf->getCollisionCost(to) : 0.0;
-                return length * (length_cost + weights[0] + weights[1] * safety + weights[2] * energy);
-            };
-            // Admissible: every edge costs at least its length times this factor
-            const double heuristic_factor = length_cost + weights[0] + weights[2] * min_power / max_power;
-            auto heuristic = [heuristic_factor](const Eigen::Vector3d& from, const Eigen::Vector3d& goal) -> double
-            { return heuristic_factor * (goal - from).norm(); };
-
-            std::vector<Eigen::Vector3d> path;
-            WeightedAStar3DStats stats;
+            std::vector<MoarPathNode> path;
+            MoarSearchStats stats;
             auto start_time = std::chrono::steady_clock::now();
-            bool found = astar_->search(a_start, a_goal, edge_cost, heuristic, path, &stats);
+            bool found = moar_->search(a_start, a_goal, weights, speeds, path, &stats);
             double duration = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
             search_time += duration;
 
-            RCLCPP_INFO(get_logger(), "Weights (%.2f, %.2f, %.2f): %s in %.3f s, %zu expansions, %zu cells",
-                        weights[0], weights[1], weights[2], found ? "path found" : "no path", duration,
+            RCLCPP_INFO(get_logger(), "MOAR (k_S %.2f, k_T %.2f, k_E %.2f): %s in %.3f s, %zu expansions, %zu nodes",
+                        weights.k_s, weights.k_t, weights.k_e, found ? "path found" : "no path", duration,
                         stats.nb_of_expansions, path.size());
             if (!found)
                 continue;
 
-            Eigen::MatrixXd waypoints(3, path.size());
-            for (size_t i = 0; i < path.size(); ++i)
-                waypoints.col(i) = path[i];
-            Eigen::MatrixXd control_points = scorer().toControlPoints(BaselinePathScorer::resampleByDistance(waypoints, waypoint_spacing),
-                                                                      speed, ramp_length);
-            a_result.solutions.push_back(scorer().score(control_points));
-            a_result.nb_of_control_points = static_cast<int>(control_points.cols());
+            // Path of the cell centers with the speeds planned by MOAR
+            a_result.solutions.push_back(scoreTrajectory(moarTrajectory(path), false));
+            a_result.nb_of_control_points = static_cast<int>(path.size());
         }
 
         a_result.initialization_time = search_time;
-        a_result.rrt_range = waypoint_spacing;
     }
 
-private:
-
     std::unique_ptr<WeightedAStar3D> astar_;
+    std::unique_ptr<MoarGraphSearch> moar_;
+    double resolution_ = 0.0;
+    Eigen::Vector3d min_bounds_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d max_bounds_ = Eigen::Vector3d::Zero();
 
 }; // class Moar3DNode
 

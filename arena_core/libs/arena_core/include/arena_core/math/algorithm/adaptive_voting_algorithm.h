@@ -112,6 +112,22 @@ std::vector<double> getFitnessRanking(const std::vector<std::vector<double>>& a_
 */
 int getBetterCandidateIndex(const std::vector<std::vector<double>>& a_population_fitness_values, const std::vector<double>& a_fitness_coefficients);
 
+/**
+* @brief Weighted Tchebycheff selection of the best candidate (alternative to the rank voting of getBetterCandidateIndex).
+*
+* The fitness values are normalized with the minimum and maximum of every objective over the candidates, the best
+* candidate minimizes the largest weighted normalized fitness, max_j(w_j * f_ij), plus a small weighted sum (augmented
+* Tchebycheff, rho) so that a weakly dominated candidate is never chosen. Unlike a weighted sum of ranks or of costs,
+* every Pareto optimal candidate can be chosen with some weights, including the ones in non-convex parts of the front.
+*
+* @param a_population_fitness_values A vector containing the fitness values of the candidates.
+* @param a_fitness_coefficients The weight of every fitness value (non-negative, at least one non-zero).
+* @param a_rho Weight of the augmentation term.
+* @return The index of the chosen candidate.
+*/
+int getTchebycheffCandidateIndex(const std::vector<std::vector<double>>& a_population_fitness_values,
+                                 const std::vector<double>& a_fitness_coefficients, double a_rho = 1.0e-3);
+
 }; // adaptive_voting_algorithm
 
 }; // arena_core

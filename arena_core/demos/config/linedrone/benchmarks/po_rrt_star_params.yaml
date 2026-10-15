@@ -1,0 +1,15 @@
+# PO-RRT* benchmark planner (nodes/testbench/benchmarks/po_rrt_star): Pareto-optimal RRT* (Batonisashvili, BU thesis 2026),
+# objectives: path length and log-survival over the occupancy probability (collision cost of the SDF octomap). The step size
+# is the RRT range (optimization.initialization.rrt_range, fixed to 5 m by the tests like RRT*).
+/**:
+    ros__parameters:
+        po_rrt_star:
+            time_budget: 5.0                # Growth time of the tree in s
+            rewire_factor: 1.1              # Factor of gamma* of Karaman and Frazzoli in the connection radius (as OMPL)
+            occupancy_threshold: 0.9        # Impassable cells (threshold of the thesis)
+            edge_resolution: 0.5            # Sampling step along the edges (half of the octomap resolution), m
+            cell_size: 1.0                  # Cells of the occupancy map: voxels of the octomaps (m)
+            clearance: 0.8                  # Valid points: same clearance as RRT* and the RRT of ARENA
+            max_nodes: 5000000              # The tree stops growing at this size (memory)
+        benchmark:
+            speed: 0.5                      # Constant speed of the trajectory, like RRT*

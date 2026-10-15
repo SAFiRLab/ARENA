@@ -7,6 +7,4 @@
             time_budget: 0.75               # Planning time of RRT* in s, about the mean planning time of ARENA with its
                                             # default hyperparameters on CL_map_3 (rrt_star_long_params.yaml: 5 s)
         benchmark:
-            nurbs_degree: 5                 # Same NURBS degree as ARENA
-            speed: 0.5                      # Speed at the control points (robot.max_speed)
-            speed_ramp_length: 0.0          # > 0: the speed grows over this distance after the start and before the goal
+            speed: 0.5                      # Constant speed of the path (robot.max_speed), flown as planned

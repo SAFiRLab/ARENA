@@ -86,11 +86,22 @@ def generate_launch_description():
         'hyperparameter_nb_of_iter': ('hyperparameters_variation_tests.nb_of_iter', '0.0', float),
         # Max number of runs of a hyperparameter value to get hyperparameter_nb_of_iter feasible ones (0: 3 x nb_of_iter)
         'hyperparameter_max_nb_of_runs': ('hyperparameters_variation_tests.max_nb_of_runs', '0.0', float),
+        # Sample size of the trajectories reported by the planner (every test): its samples are linearly interpolated up to
+        # this size and its costs evaluated again, so that every planner and sample size is compared on the same samples as
+        # the reference front (0: its own samples)
+        'evaluation_sample_size': ('evaluation_sample_size', '0.0', float),
+        # Final evaluation of the reported trajectories (every planner): samples every evaluation_spacing meters along them,
+        # < 0: half the resolution of the octomap (a longer trajectory has more samples), 0: off (evaluation_sample_size)
+        'evaluation_spacing': ('evaluation_spacing', '-1.0', float),
+        # Voting algorithm of the planner (rank or risk_weighted_tchebycheff), planner: the planner's own algorithm
+        'voting_algorithm': ('voting_algorithm', 'planner', str),
 
         'optimal_solution_nb_of_iter': ('optimal_solution_per_objective_tests.nb_of_iter', '0.0', float),
 
         # Risk sweep tests: every risk (battery, wind, location) from 0 to 1 by risk_sweep_step, the others null,
         # optimal_solution_nb_of_iter plannings per risk level. Set is_risks_variation_tests:=false (true by default).
+        # The risks and the initial (nominal) coefficients are sent to the planner, its voting algorithm computes the
+        # coefficients.
         'is_risk_sweep_tests': ('is_risk_sweep_tests', 'false', bool),
         'risk_sweep_step': ('risk_sweep_tests.step', '0.1', float),
         'risk_sweep_initial_time': ('risk_sweep_tests.initial_coeffs.time', '0.33', float),

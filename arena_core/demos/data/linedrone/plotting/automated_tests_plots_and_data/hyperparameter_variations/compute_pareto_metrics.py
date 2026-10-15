@@ -189,6 +189,12 @@ def load_runs(report_path, pareto_path, all_safe_solutions=False):
            runs), all the safe solutions of the file, including the ones only dominated by unsafe solutions.
     """
     runs = {}
+    for path in (report_path, pareto_path):
+        with open(path, 'r', newline='') as f:
+            if not f.readline().startswith('Id,'):
+                raise ValueError('{} has no header (first line should start with "Id,"): it was probably moved while '
+                                 'the testbench was writing it, the testbench then wrote the next rows in a new file '
+                                 'without header. Add the header of another report of the same type.'.format(path))
     for row in read_csv(report_path):
         run_id = int(row['Id'])
         if run_id in runs:

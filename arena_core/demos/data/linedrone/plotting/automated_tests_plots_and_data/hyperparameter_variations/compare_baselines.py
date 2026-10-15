@@ -2,7 +2,13 @@
 
 Reads the reports written by testbench_node for every planner (scripts/linedrone/automated_tests/ksl_airport_1/baselines,
 copied to automated_tests_plots_and_data/baselines/CL_map_3/<planner>/) and computes for every planner, over its runs:
-    - success rate: share of the runs with a feasible and safe trajectory (constraints and safety check of ARENA)
+    - completion rate: share of the runs where the planner returned at least one trajectory reaching the goal (status.csv
+      written by the benchmark planners, benchmark.status_file; ARENA's optimization always completes)
+    - feasibility rate: share of the runs with a feasible and safe trajectory, i.e. completed AND respecting the
+      constraints (occupancy, speed and, for the planners with dynamics, acceleration) and the safety check of ARENA
+    - physical feasibility rate: share of the runs with at least one safe trajectory respecting all the physical
+      constraints of the robot, the acceleration included for every planner (a planner without dynamics changes its
+      velocity instantaneously: infinite acceleration). Same as the feasibility rate for ARENA and the dynamic planners
     - planning time (s)
     - costs of the chosen trajectory: time (ARENA time objective, s), safety and energy (J) costs
     - clearance of the chosen trajectory: minimum and mean distance from its samples to the closest occupied voxel of the
@@ -41,7 +47,8 @@ BASELINES = os.path.join(HERE, '..', 'baselines', 'CL_map_3')
 DEFAULT_METHODS = [
     ('ARENA', os.path.join(BASELINES, 'arena_default')),
     ('A*', os.path.join(BASELINES, 'astar')),
-    ('MOAR-3D', os.path.join(BASELINES, 'moar3d_sweep')),
+    ('MOAR-3D', os.path.join(BASELINES, 'moar3d')),
+    ('MOAR-3D (weight sweep)', os.path.join(BASELINES, 'moar3d_sweep')),
     ('RRT* (0.75 s)', os.path.join(BASELINES, 'rrt_star_short')),
     ('RRT* (5 s)', os.path.join(BASELINES, 'rrt_star_long')),
     ('Spline NSGA-II', os.path.join(BASELINES, 'spline_nsga2')),
@@ -53,7 +60,9 @@ FIG4_SPEED = 2.0
 
 # Column name -> (header of the table, value of a run, number of decimals)
 COLUMNS = [
-    ('success_rate', 'Success (%)', 0),
+    ('completion_rate', 'Completion (%)', 0),
+    ('success_rate', 'Feasible (%)', 0),
+    ('physical_rate', 'Phys. feasible (%)', 0),
     ('planning_time', 'Planning time (s)', 3),
     ('chosen_time', 'Duration (s)', 1),
     ('chosen_safety', 'Safety cost', 3),
@@ -118,21 +127,41 @@ def load_method(folder, inflation_offset):
     return runs
 
 
+def status_rates(folder):
+    """Shares of the plannings that returned a trajectory reaching the goal and that returned a safe trajectory respecting
+    all the physical constraints (status.csv files of the folder), (None, None) without status file."""
+    completed, physical, total = 0, 0, 0
+    for root, _, files in os.walk(folder):
+        if 'status.csv' in files:
+            with open(os.path.join(root, 'status.csv'), newline='') as f:
+                for row in csv.DictReader(f):
+                    completed += int(row['Completed'])
+                    physical += int(row.get('Physically feasible and safe', 0)) > 0
+                    total += 1
+    if not total:
+        return None, None
+    return 100.0 * completed / total, 100.0 * physical / total
+
+
 def best_in_front(run, objective):
     if not run['feasible'] or len(run['front']) == 0:
         return float('nan')
     return float(np.min(run['front'][:, objective]))
 
 
-def summarize(label, runs):
+def summarize(label, runs, completion=None, physical=None):
     entry = {'method': label, 'nb_of_runs': len(runs), 'nb_of_feasible_runs': sum(r['feasible'] for r in runs)}
     entry['success_rate'] = (100.0 * entry['nb_of_feasible_runs'] / len(runs), 0.0)
+    # Without status file (ARENA): the optimization always returns its population
+    entry['completion_rate'] = (100.0 if completion is None else completion, 0.0)
+    # Without status file (ARENA): its constraints are all the physical constraints
+    entry['physical_rate'] = (entry['success_rate'][0] if physical is None else physical, 0.0)
     for run in runs:
         run['best_time'] = best_in_front(run, 0)
         run['best_safety'] = best_in_front(run, 1)
         run['best_energy'] = best_in_front(run, 2) * 1.0e-3
     for key, _, _ in COLUMNS:
-        if key == 'success_rate':
+        if key in ('success_rate', 'completion_rate', 'physical_rate'):
             continue
         # The planning time counts every run, the other values only the feasible runs (HV of an infeasible run is 0)
         values = np.array([r[key] for r in runs if r['feasible'] or key == 'planning_time'], dtype=float)
@@ -210,11 +239,13 @@ def main():
 
     methods = parse_methods(args.methods) if args.methods else DEFAULT_METHODS
     method_runs = []
+    completions = {}
     for label, folder in methods:
         if not find_reports([folder]):
             print('Warning: no report for {} in {}, it is skipped'.format(label, folder), file=sys.stderr)
             continue
         method_runs.append((label, load_method(folder, args.inflation_offset)))
+        completions[label] = status_rates(folder)
     if not method_runs:
         sys.exit('No report found')
 
@@ -232,7 +263,7 @@ def main():
     print('Reference front: {} points, ideal {}, nadir {}'.format(info['reference_size'], np.round(info['ideal'], 3),
                                                                  np.round(info['nadir'], 3)))
 
-    entries = [summarize(label, runs) for label, runs in method_runs]
+    entries = [summarize(label, runs, *completions.get(label, (None, None))) for label, runs in method_runs]
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     write_outputs(args.output, entries)
 

@@ -1,0 +1,15 @@
+# Kinodynamic RRT* benchmark planner (nodes/testbench/benchmarks/kino_rrt_star): Webb and van den Berg (ICRA 2013),
+# 3D double integrator with the limits of the robot (robot.max_speed, robot.max_acceleration), cost int (1 + r ||u||^2) dt.
+/**:
+    ros__parameters:
+        kino_rrt_star:
+            time_budget: 5.0                # Planning time in s (anytime, the best trajectory to the goal is returned)
+            control_penalty: 50.0           # r (0.25 in the paper for 10 m/s and 10 m/s^2): chosen so that the optimal
+                                            # connections reach velocities near robot.max_speed without frequently
+                                            # exceeding it (a 5 m rest-to-rest connection peaks at about 0.5 m/s)
+            neighbor_radius: 20.0           # Cost radius of the neighbors (<= 0: infinite, as in the paper's double
+                                            # integrator experiment); a 5 m rest-to-rest connection costs about 19
+            check_step: 0.1                 # s, states and controls checked along the connections
+            clearance: 0.8                  # Valid positions: same clearance as RRT* and the RRT of ARENA
+            sampling_step: 0.05             # s, sampling of the trajectory for its evaluation
+            max_nodes: 2000000

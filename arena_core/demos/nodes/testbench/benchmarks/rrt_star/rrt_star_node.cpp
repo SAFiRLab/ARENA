@@ -33,8 +33,11 @@
 /**
  * RRT* benchmark planner: OMPL RRT* minimizing the path length, with the same state space, bounds and state validity
  * checker as the RRT initialization of ARENA. RRT* is anytime, it runs for rrt_star.time_budget seconds and returns
- * its best path. The nodes of the path are the control points of the NURBS curve evaluated like the trajectories of
- * ARENA, like the RRT paths that initialize ARENA.
+ * its best path.
+ *
+ * RRT* plans a geometric path without speeds: its polyline is flown as it is at the constant speed benchmark.speed
+ * (robot.max_speed), reached instantaneously at the start and left instantaneously at the goal, and evaluated with the
+ * cost models of ARENA (BenchmarkPlannerNode::scoreTrajectory, the acceleration isn't checked).
  */
 
 // Local
@@ -82,7 +85,6 @@ protected:
         const double range = param<double>("optimization.initialization.rrt_range", 5.0);
         const double time_budget = param<double>("rrt_star.time_budget", 1.0);
         const double speed = param<double>("benchmark.speed", linedrone_config_.robot_max_speed_);
-        const double ramp_length = param<double>("benchmark.speed_ramp_length", 0.0);
 
         ompl_planner_->getInitializer()->planner_->as<ompl::geometric::RRTstar>()->setRange(range);
         ompl_planner_->setSolvingTimeout(time_budget);
@@ -112,9 +114,8 @@ protected:
         }
         RCLCPP_INFO(get_logger(), "RRT* path: %zu states, length %.2f m", path->getStateCount(), path->length());
 
-        Eigen::MatrixXd control_points = scorer().toControlPoints(waypoints, speed, ramp_length);
-        a_result.solutions.push_back(scorer().score(control_points));
-        a_result.nb_of_control_points = static_cast<int>(control_points.cols());
+        a_result.solutions.push_back(scoreTrajectory(constantSpeedTrajectory(waypoints, speed), false));
+        a_result.nb_of_control_points = static_cast<int>(waypoints.cols());
     }
 
 private:

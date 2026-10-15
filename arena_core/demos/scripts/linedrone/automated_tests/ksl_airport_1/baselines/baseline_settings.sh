@@ -3,8 +3,9 @@
 # Source this file, don't execute it.
 #
 # Every planner solves the planning problem of the hyperparameter sweeps and of the reference front of this map
-# (map_test_3, start and goal of config/linedrone/testbench_configs/map_test_3.yaml), with the same sample size (50) so
-# that their costs are comparable to the reference front. The benchmark planners are started by the testbench in place
+# (map_test_3, start and goal of config/linedrone/testbench_configs/map_test_3.yaml), with the same sample size (50), and
+# their trajectories are evaluated with the sample size of the reference front (evaluation_sample_size, 250) so that their
+# costs are comparable to it. The benchmark planners are started by the testbench in place
 # of linedrone_test_node (start_planner_node.sh <planner> <params file>), with the same ROS interface and the same
 # reports, see nodes/testbench/benchmarks.
 #
@@ -17,14 +18,22 @@ AUTOMATED_TESTS_DIR="$BASELINES_DIR/../.."
 BENCHMARK_CONFIGS_DIR="/home/dev_ws/src/arena_core/demos/config/linedrone/benchmarks"
 source "$AUTOMATED_TESTS_DIR/terminal_utils.sh"
 
-map_name="map_test_3"
-# Same sample size as the reference front of CL_map_3 (ksl_airport_1/reference_front/reference_front.sh)
+# Planning problem, map_test_3 by default (other maps: see generated_maps/seed_42/baselines/run_all.sh)
+map_name="${BASELINE_MAP_NAME:-map_test_3}"
+# Octomap of the costmap, empty: saved_map.bt_file of costmap_3D_params.yaml (map_test_3)
+bt_file="${BASELINE_BT_FILE:-}"
+# Sample size of the planners, the default of ARENA and of the hyperparameter sweeps
 nurbs_sample_size=50
+# The trajectories reported by every planner (costs, chosen path and its clearance) are evaluated with this sample size:
+# their samples are linearly interpolated (points at equal distance on every segment) and the costs evaluated again, so
+# that a trajectory with few samples can't hide the segments passing close to the obstacles. Same sample size as the
+# reference fronts (reference_front.sh) and the evaluation of the hyperparameter sweeps.
+evaluation_sample_size=250
 
 trap 'trap - INT TERM; stop_testbench_nodes; exit 1' INT TERM
 
 # Usage: run_testbench <planner> <params file> <world name> <end message> <testbench launch arguments...>
-#   planner: arena (linedrone_test_node), moar_3d, rrt_star or spline_nsga2
+#   planner: arena (linedrone_test_node), moar_3d, rrt_star, spline_nsga2, apex or po_rrt_star
 #   params file: parameters of the benchmark planner (empty for arena or the default parameters of the planner)
 #   end message: message of the testbench log telling the end of the test
 run_testbench() {
@@ -51,7 +60,9 @@ run_testbench() {
     nb_of_ends=$(grep -c "$end_message" /tmp/testbench.log 2> /dev/null)
     nb_of_ends=${nb_of_ends:-0}
 
-    run_in_terminal "costmap_3D" "ros2 launch arena_core costmap_3D_launch.py"
+    local bt_arg=""
+    [ -n "$bt_file" ] && bt_arg="bt_file:=$bt_file"
+    run_in_terminal "costmap_3D" "ros2 launch arena_core costmap_3D_launch.py $bt_arg"
 
     # The testbench starts the planner by itself
     sleep 1.0
@@ -60,6 +71,7 @@ run_testbench() {
         world_name:=${world_name} \
         planner_start_command:='${start_command}' \
         planner_kill_command:=\"pkill -INT -f '${kill_pattern}'\" \
+        evaluation_sample_size:=${evaluation_sample_size} \
         $*"
 
     until [ "$(grep -c "$end_message" /tmp/testbench.log 2> /dev/null)" -gt "$nb_of_ends" ]; do
@@ -110,5 +122,6 @@ run_risk_sweep() {
         is_risks_variation_tests:=false \
         risk_sweep_step:=0.1 \
         optimal_solution_nb_of_iter:=${nb_of_runs} \
+        fixed_nurbs_sample_size:=${nurbs_sample_size} \
         "$@"
 }
