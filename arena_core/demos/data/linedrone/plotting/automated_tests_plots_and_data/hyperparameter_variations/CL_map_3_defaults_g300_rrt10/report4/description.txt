@@ -1,0 +1,11 @@
+RRT range variations from 1m to 30m
+
+ARENA initialization: 2% shortest path A*, 2% safer RRT (SDF), the rest random RRT. Final evaluation of the
+reported solutions at half the octomap resolution (evaluation_spacing -1). Defaults: 300 generations, population 40,
+50 samples, RRT range 10 m. Run 2026-10-18
+
+Added on 2026-10-18: RRT range variations from 31 m to 100 m (rrt_range_variation_31_100.sh, same step and settings),
+report_3d_CL_2026-10-18_20-33-27.csv (the 1 to 30 m sweep is report_3d_CL_2026-10-18_19-58-57.csv)
+
+Added on 2026-10-18: RRT range variations from 101 m to 200 m (rrt_range_variation_101_200.sh, same step and settings),
+report_3d_CL_2026-10-18_20-47-28.csv 

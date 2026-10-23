@@ -1,0 +1,31 @@
+ARENA front on scaffold_power_line_real (octomap of the real lidar of ressources/2023-09-05-09-50-05.bag, see
+the map section below), 2026-10-19, run 2 with:
+  - costmap: inflation radius 0 m (1 m before), SDF obstacle influence 2 to 5 m (2 to 9 m before)
+    (override file: costmap_3D_params.yaml + navigation.3d.inflation_radius 0.0, obstacle_influence_distance.max 5.0)
+  - initial population: half from the shortest path A* (astar_ratio 0.5: 20 of 40 paths, the same A* path), 1 SDF-RRT
+    path (sdf_validity_ratio 0.02), the min-exposure A* seed, the rest RRT
+    (astar_ratio given in a params file after linedrone_problem_params.yaml: a -p override of a parameter of that file
+    is ignored)
+Other settings as the 1 m-inflation run below (new defaults + scratch-build DDA cost, min-exposure seed, A* seed spacing fix, A* seed
+clearance 0.5 m), start (-6.125, 0, 2.5), goal (6.375, 0, 2.5), one planning, 40 / 40 safe solutions, planning time
+1.04 s. 12 solutions through the gap under the lower cables (z 2.2-2.5, min obstacle distance 1.1 m, the lowest time and
+energy costs), 28 over the top (up to 11 m), 15 around a tower (|y| > 4 m).
+View: publish_front.sh scaffold_power_line_real scaffold_power_line_real/arena_front_infl0
+
+---- Map, and the 1 m-inflation run (../arena_front, removed in the 2026-10-23 cleanup; the 'run 2' above replaces it) ----
+ARENA front on the octomap of the real lidar of the 2023-09-05 scaffolding flight (ressources/2023-09-05-09-50-05.bag),
+2026-10-19. Map: ressources/generated_map/scaffold_power_line_real, built by
+scripts/linedrone/map_generator/rosbag_octomap: run_bag_octomap.sh <bag> <raw.bt> 84 --ground-align
+--transform -138.0 -8.4329 -0.1954 0.4650 (VLP-16 clouds deskewed + /scan slices up to 20 m, octomap_server 0.25 m, hit
+0.7, miss 0.48; bag altitude jump at takeoff corrected; frame of the scaffold model: x across the structure (flight
+direction), y along the cables with y = 0 in the middle of the gap, ground surface at z = 0.125), then
+crop_octomap.py ... scaffold_power_line_real --x -15 15.5 --y -13 10 --z 0 12 --start -6.125 0 2.5 --goal 6.375 0 2.5.
+Structure x -3.1 to 3.4, towers y -7.1 to -1.85 and 1.9 to 3.65 (outer face of the +y tower only partly seen), cables at
+z ~3.6 and ~6.5, brush up to z ~0.75 under and around the structure.
+Start / goal 3 m outside the structure on the gap axis, z 2.5: the lowest valid RRT start (inflated 1 m octomap, 0.8 m
+clearance box: brush inflated to 1.75 m). No valid state under the cables (the gap is free only above z ~8.9 m after
+inflation), so no gap path: the front goes around the +y tower (lowest energy, z 2.5-3.9) or over the top (up to 11.8 m).
+Planning: same settings as the synthetic scaffold runs, removed (new defaults + scratch-build DDA cost, min-exposure seed,
+A* seed spacing fix, A* seed clearance 0.5 m), one planning, 38 / 40 safe solutions exported. Planning time 1.34 s.
+View: publish_risk_scenarios.py --map scaffold_power_line_real --front scaffold_power_line_real/arena_front_infl0 --start-goal
+Scratch-build options and runner: /home/dev_ws/data_output/arena_scratch_tools (scratch_experiments.patch, run.sh).

@@ -1,0 +1,394 @@
+rosbag2_bagfile_information:
+  compression_format: ''
+  compression_mode: ''
+  duration:
+    nanoseconds: 251760652421
+  files:
+  - duration:
+      nanoseconds: 251760652421
+    message_count: 208055
+    path: 2023-09-05-09-50-05_ros2.mcap
+    starting_time:
+      nanoseconds_since_epoch: 1693921990740081095
+  message_count: 208055
+  relative_file_paths:
+  - 2023-09-05-09-50-05_ros2.mcap
+  starting_time:
+    nanoseconds_since_epoch: 1693921990740081095
+  storage_identifier: mcap
+  topics_with_message_count:
+  - message_count: 10019
+    topic_metadata:
+      name: /rosout_agg
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: rosgraph_msgs/msg/Log
+  - message_count: 17007
+    topic_metadata:
+      name: /rosout
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: rosgraph_msgs/msg/Log
+  - message_count: 1027
+    topic_metadata:
+      name: /diagnostics
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: diagnostic_msgs/msg/DiagnosticArray
+  - message_count: 1
+    topic_metadata:
+      name: /tf_static
+      offered_qos_profiles: "- avoid_ros_namespace_conventions: false\n  deadline:\n\
+        \    nsec: 4294967295\n    sec: 2147483647\n  depth: 1\n  durability: 1\n\
+        \  history: 1\n  lifespan:\n    nsec: 4294967295\n    sec: 2147483647\n  liveliness:\
+        \ 1\n  liveliness_lease_duration:\n    nsec: 4294967295\n    sec: 2147483647\n\
+        \  reliability: 1\n"
+      serialization_format: cdr
+      type: tf2_msgs/msg/TFMessage
+  - message_count: 68001
+    topic_metadata:
+      name: /mavlink/from
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: mavros_msgs/msg/Mavlink
+  - message_count: 15083
+    topic_metadata:
+      name: /tf
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: tf2_msgs/msg/TFMessage
+  - message_count: 1
+    topic_metadata:
+      name: /mavros/geofence/waypoints
+      offered_qos_profiles: "- avoid_ros_namespace_conventions: false\n  deadline:\n\
+        \    nsec: 4294967295\n    sec: 2147483647\n  depth: 1\n  durability: 1\n\
+        \  history: 1\n  lifespan:\n    nsec: 4294967295\n    sec: 2147483647\n  liveliness:\
+        \ 1\n  liveliness_lease_duration:\n    nsec: 4294967295\n    sec: 2147483647\n\
+        \  reliability: 1\n"
+      serialization_format: cdr
+      type: mavros_msgs/msg/WaypointList
+  - message_count: 2617
+    topic_metadata:
+      name: /mavros/global_position/raw/fix
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/NavSatFix
+  - message_count: 2616
+    topic_metadata:
+      name: /mavros/global_position/raw/gps_vel
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: geometry_msgs/msg/TwistStamped
+  - message_count: 2621
+    topic_metadata:
+      name: /mavros/global_position/raw/satellites
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: std_msgs/msg/UInt32
+  - message_count: 2617
+    topic_metadata:
+      name: /mavros/global_position/global
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/NavSatFix
+  - message_count: 2618
+    topic_metadata:
+      name: /mavros/global_position/local
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: nav_msgs/msg/Odometry
+  - message_count: 2618
+    topic_metadata:
+      name: /mavros/global_position/rel_alt
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: std_msgs/msg/Float64
+  - message_count: 2617
+    topic_metadata:
+      name: /mavros/global_position/compass_hdg
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: std_msgs/msg/Float64
+  - message_count: 2
+    topic_metadata:
+      name: /mavros/home_position/home
+      offered_qos_profiles: "- avoid_ros_namespace_conventions: false\n  deadline:\n\
+        \    nsec: 4294967295\n    sec: 2147483647\n  depth: 1\n  durability: 1\n\
+        \  history: 1\n  lifespan:\n    nsec: 4294967295\n    sec: 2147483647\n  liveliness:\
+        \ 1\n  liveliness_lease_duration:\n    nsec: 4294967295\n    sec: 2147483647\n\
+        \  reliability: 1\n"
+      serialization_format: cdr
+      type: mavros_msgs/msg/HomePosition
+  - message_count: 2626
+    topic_metadata:
+      name: /mavros/imu/data
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/Imu
+  - message_count: 2616
+    topic_metadata:
+      name: /mavros/imu/mag
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/MagneticField
+  - message_count: 2617
+    topic_metadata:
+      name: /mavros/imu/temperature_baro
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/Temperature
+  - message_count: 2618
+    topic_metadata:
+      name: /mavros/imu/static_pressure
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/FluidPressure
+  - message_count: 2618
+    topic_metadata:
+      name: /mavros/imu/diff_pressure
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/FluidPressure
+  - message_count: 2614
+    topic_metadata:
+      name: /mavros/imu/data_raw
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/Imu
+  - message_count: 2617
+    topic_metadata:
+      name: /mavros/local_position/pose
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: geometry_msgs/msg/PoseStamped
+  - message_count: 2617
+    topic_metadata:
+      name: /mavros/local_position/velocity_local
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: geometry_msgs/msg/TwistStamped
+  - message_count: 2618
+    topic_metadata:
+      name: /mavros/local_position/velocity_body
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: geometry_msgs/msg/TwistStamped
+  - message_count: 2615
+    topic_metadata:
+      name: /mavros/local_position/odom
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: nav_msgs/msg/Odometry
+  - message_count: 2616
+    topic_metadata:
+      name: /mavros/nav_controller_output
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: mavros_msgs/msg/NavControllerOutput
+  - message_count: 1
+    topic_metadata:
+      name: /mavros/rallypoint/waypoints
+      offered_qos_profiles: "- avoid_ros_namespace_conventions: false\n  deadline:\n\
+        \    nsec: 4294967295\n    sec: 2147483647\n  depth: 1\n  durability: 1\n\
+        \  history: 1\n  lifespan:\n    nsec: 4294967295\n    sec: 2147483647\n  liveliness:\
+        \ 1\n  liveliness_lease_duration:\n    nsec: 4294967295\n    sec: 2147483647\n\
+        \  reliability: 1\n"
+      serialization_format: cdr
+      type: mavros_msgs/msg/WaypointList
+  - message_count: 2614
+    topic_metadata:
+      name: /mavros/rc/in
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: mavros_msgs/msg/RCIn
+  - message_count: 2616
+    topic_metadata:
+      name: /mavros/rc/out
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: mavros_msgs/msg/RCOut
+  - message_count: 346
+    topic_metadata:
+      name: /mavros/state
+      offered_qos_profiles: "- avoid_ros_namespace_conventions: false\n  deadline:\n\
+        \    nsec: 4294967295\n    sec: 2147483647\n  depth: 1\n  durability: 1\n\
+        \  history: 1\n  lifespan:\n    nsec: 4294967295\n    sec: 2147483647\n  liveliness:\
+        \ 1\n  liveliness_lease_duration:\n    nsec: 4294967295\n    sec: 2147483647\n\
+        \  reliability: 1\n"
+      serialization_format: cdr
+      type: mavros_msgs/msg/State
+  - message_count: 16
+    topic_metadata:
+      name: /mavros/param/param_value
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: mavros_msgs/msg/Param
+  - message_count: 2617
+    topic_metadata:
+      name: /mavros/battery
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/BatteryState
+  - message_count: 2617
+    topic_metadata:
+      name: /mavros/time_reference
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/TimeReference
+  - message_count: 2616
+    topic_metadata:
+      name: /mavros/timesync_status
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: mavros_msgs/msg/TimesyncStatus
+  - message_count: 2619
+    topic_metadata:
+      name: /mavros/vfr_hud
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: mavros_msgs/msg/VFR_HUD
+  - message_count: 1
+    topic_metadata:
+      name: /mavros/mission/waypoints
+      offered_qos_profiles: "- avoid_ros_namespace_conventions: false\n  deadline:\n\
+        \    nsec: 4294967295\n    sec: 2147483647\n  depth: 1\n  durability: 1\n\
+        \  history: 1\n  lifespan:\n    nsec: 4294967295\n    sec: 2147483647\n  liveliness:\
+        \ 1\n  liveliness_lease_duration:\n    nsec: 4294967295\n    sec: 2147483647\n\
+        \  reliability: 1\n"
+      serialization_format: cdr
+      type: mavros_msgs/msg/WaypointList
+  - message_count: 5
+    topic_metadata:
+      name: /mavros/statustext/recv
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: mavros_msgs/msg/StatusText
+  - message_count: 2114
+    topic_metadata:
+      name: /cables_manager/cable_visual_markers
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: visualization_msgs/msg/MarkerArray
+  - message_count: 12697
+    topic_metadata:
+      name: /mavros/rc/in_logitech
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: mavros_msgs/msg/RCIn
+  - message_count: 1
+    topic_metadata:
+      name: /parameter_descriptions
+      offered_qos_profiles: "- avoid_ros_namespace_conventions: false\n  deadline:\n\
+        \    nsec: 4294967295\n    sec: 2147483647\n  depth: 1\n  durability: 1\n\
+        \  history: 1\n  lifespan:\n    nsec: 4294967295\n    sec: 2147483647\n  liveliness:\
+        \ 1\n  liveliness_lease_duration:\n    nsec: 4294967295\n    sec: 2147483647\n\
+        \  reliability: 1\n"
+      serialization_format: cdr
+      type: dynamic_reconfigure/msg/ConfigDescription
+  - message_count: 1
+    topic_metadata:
+      name: /parameter_updates
+      offered_qos_profiles: "- avoid_ros_namespace_conventions: false\n  deadline:\n\
+        \    nsec: 4294967295\n    sec: 2147483647\n  depth: 1\n  durability: 1\n\
+        \  history: 1\n  lifespan:\n    nsec: 4294967295\n    sec: 2147483647\n  liveliness:\
+        \ 1\n  liveliness_lease_duration:\n    nsec: 4294967295\n    sec: 2147483647\n\
+        \  reliability: 1\n"
+      serialization_format: cdr
+      type: dynamic_reconfigure/msg/Config
+  - message_count: 1265
+    topic_metadata:
+      name: /scan
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/LaserScan
+  - message_count: 2481
+    topic_metadata:
+      name: /line_points
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/PointCloud2
+  - message_count: 1941
+    topic_metadata:
+      name: /cable_points
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/PointCloud2
+  - message_count: 2512
+    topic_metadata:
+      name: /model_closest_points
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/PointCloud2
+  - message_count: 39
+    topic_metadata:
+      name: /velodyne_points_throttled
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/PointCloud2
+  - message_count: 2510
+    topic_metadata:
+      name: /lidar_closest_points
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/PointCloud2
+  - message_count: 2509
+    topic_metadata:
+      name: /cables_map
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: linedrone_perception/msg/Cables
+  - message_count: 2512
+    topic_metadata:
+      name: /cable_yaw
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: std_msgs/msg/Float32
+  - message_count: 12
+    topic_metadata:
+      name: /model_points
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/PointCloud2
+  - message_count: 442
+    topic_metadata:
+      name: /filtered_cloud_points_throttled
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/PointCloud2
+  - message_count: 1
+    topic_metadata:
+      name: /mavros/global_position/gp_origin
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: geographic_msgs/msg/GeoPointStamped
+  - message_count: 1
+    topic_metadata:
+      name: /interface/cable_index
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: std_msgs/msg/Int32
+  - message_count: 2
+    topic_metadata:
+      name: /interface/autonomous_cmd_switch
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: std_msgs/msg/Bool
+  - message_count: 1
+    topic_metadata:
+      name: /interface/autonomous_gps_pylones
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: linedrone_interface/msg/GPS_Pylones
+  - message_count: 2
+    topic_metadata:
+      name: /joy
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: sensor_msgs/msg/Joy
+  - message_count: 2687
+    topic_metadata:
+      name: /mavros/setpoint_raw/local
+      offered_qos_profiles: ''
+      serialization_format: cdr
+      type: mavros_msgs/msg/PositionTarget
+  version: 5

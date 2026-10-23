@@ -1,0 +1,20 @@
+Risk scenarios of the trajectory figure (CL_map_3, mission start and goal, bounds = octomap extents): 10 ARENA plannings per
+scenario, 300 generations, population 40, sample size 50, RRT range 10 m, 2% A* and 2% safer RRT seeds, final evaluation
+at half the octomap resolution (run 2026-10-19 with the scratch build of the convergence investigation).
+Experimental options (scratch build, not in the repository code yet):
+    optimization.segment_safety_cost + integral_safety_cost: safety cost integrated exactly along the straight segments
+        between the samples (voxel traversal of the SDF), start and goal segments excluded, + its max
+    optimization.initialization.min_exposure_seed_count 1: one individual seeded with the minimum-exposure path (A* on the
+        SDF voxel grid, cost length x (1 + 1e4 C), C dilated by one voxel, string pulled, resampled every RRT range)
+The voting is the core RiskWeightedTchebycheffVoting (nominal coefficients 1/3, beta 2), its coefficients for the risks of
+the scenario given to the planner as fixed costs.
+    high_winds     wind 1.0                       coefficients T/S/E 1e-48 / 1 / 1e-12
+    low_gps        localization 1.0               1e-48 / 1 / 1e-24
+    low_battery    battery 1.0                    1 / 1e-48 / 1e-12
+    battery_winds  battery 0.5, wind 0.5          0.1667 / 0.1667 / 0.6667
+    battery_gps    battery 0.5, localization 0.5  0.25 / 0.25 / 0.5
+    winds_gps      wind 0.5, localization 0.5     0.0035 / 0.8858 / 0.1107
+
+Figure: screenshot.png (view of publish_risk_scenarios.py --map CL_map_3, taken by the user, 2026-10-19) and
+annotations.json (pixel positions of the labels and arrows) -> ../../make_risk_scenarios_figure.py ->
+baselines/risk_scenarios_trajectories.{pdf,png}

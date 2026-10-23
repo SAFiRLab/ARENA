@@ -1,0 +1,16 @@
+# Testbench configuration of ressources/generated_map/scaffold_power_line_real/scaffold_power_line_real.bt (scripts/linedrone/map_generator/rosbag_octomap/crop_octomap.py)
+drone:
+  position:
+    x: -6.125
+    y: 0.0
+    z: 2.5
+  orientation:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    w: 1.0
+planning_goal:
+  position:
+    x: 6.375
+    y: 0.0
+    z: 2.5

@@ -1,0 +1,8 @@
+{"font_size": 48,
+ "padding": [28, 14],
+ "labels": [
+  {"text": "Goal", "center": [288, 848], "color": "dark"},
+  {"text": "Start", "center": [1430, 918], "color": "dark"},
+  {"text": "Energy", "center": [1012, 988], "color": "energy", "arrow_from": [1058, 952], "arrow_to": [1105, 839]},
+  {"text": "Safety", "center": [1550, 748], "color": "safety", "arrow_from": [1500, 712], "arrow_to": [1416, 570]}
+ ]}

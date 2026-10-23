@@ -51,6 +51,7 @@ add_executable(moar_3d_node
     testbench/benchmarks/moar_3d/moar_3d_node.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/moar_3d/weighted_astar_3d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/moar_3d/moar_graph_search.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/testbench/benchmarks/moar_3d/moar_kinodynamic_search.cpp
     ${ARENA_BENCHMARKS_COMMON_SRCS}
 )
 add_executable(rrt_star_node testbench/benchmarks/rrt_star/rrt_star_node.cpp ${ARENA_BENCHMARKS_COMMON_SRCS})

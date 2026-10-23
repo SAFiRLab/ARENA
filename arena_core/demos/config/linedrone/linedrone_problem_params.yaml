@@ -17,13 +17,15 @@
         optimization:
             initialization:
                 timeout: 1.0                       # Maximum time for RRT in seconds
-                rrt_range: 5.0                        # Distance between nodes in the RRT
+                rrt_range: 10.0                       # Distance between nodes in the RRT (default since 2026-10-18, was 5.0)
                 initial_speed_ratio: 1.0              # Seed speed of the RRT paths / robot.max_speed (was 0.5 before 2026-10-07)
+                astar_ratio: 0.02                     # Share of the initial paths from a shortest path A* (1 of 40)
+                sdf_validity_ratio: 0.02              # Share of the initial paths from an RRT in the safest area (SDF), 1 of 40
             sample_size: 50                      # Number of points along a curve
             early_exit_on_constraint_violation: true # The evaluation stops at the first constraint violation (same fitness, faster)
             NSGA-II:
                 population_size: 40                     # Number of individuals in the population
-                generations: 1000                      # Number of generations
+                generations: 300                       # Number of generations (default since 2026-10-18, was 1000)
                 mutation_params: 
                     distribution_index: 20.0             # Distribution index of the mutation
                 crossover_params:

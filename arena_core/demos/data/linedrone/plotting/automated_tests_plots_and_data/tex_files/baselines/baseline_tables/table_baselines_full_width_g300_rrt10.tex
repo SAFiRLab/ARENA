@@ -1,0 +1,42 @@
+\documentclass[journal]{IEEEtran}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage[table]{xcolor}
+% --- goes in the preamble of the paper ---
+\newcommand{\sd}[1]{\,{\fontsize{5}{6}\selectfont #1}}    % spread in small font, same line
+\newcommand{\rx}[1]{\textcolor{black!50}{#1}}            % relaxed-problem reference (no dynamics)
+\begin{document}
+% ---- PAPER TEXT (start) ----
+\begin{table*}[t]
+\centering
+\caption{Comparison with baselines (20 runs per non-deterministic planner)}
+\label{tab:baselines}
+\scriptsize
+\setlength{\tabcolsep}{1.2pt}
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}l@{\hspace{10pt}}cccccccccccccccc@{}}
+\toprule
+ & \multicolumn{8}{c}{Cluttered environment} & \multicolumn{8}{c}{Powerlines environment} \\
+\cmidrule(lr){2-9} \cmidrule(lr){10-17}
+ &  &  & \multicolumn{4}{c}{Best of the front} &  &  &  &  & \multicolumn{4}{c}{Best of the front} &  &  \\
+\cmidrule(lr){4-7} \cmidrule(lr){12-15}
+ & SR & Pl.\,Time & Dur. & Energy & $d_\text{min}$ & $d_\text{mean}$ & HV & IGD$^+$ & SR & Pl.\,Time & Dur. & Energy & $d_\text{min}$ & $d_\text{mean}$ & HV & IGD$^+$ \\
+Planner & (\%) & (s) & (s) & (kJ) & (m) & (m) &  &  & (\%) & (s) & (s) & (kJ) & (m) & (m) &  &  \\
+\midrule
+ARENA (ours) & \textbf{100} & 0.31\sd{$\pm$.01} & \textbf{254}\sd{$\pm$4} & \textbf{802}\sd{$\pm$13} & 7.0\sd{$\pm$.2} & 9.3\sd{$\pm$.5} & \textbf{0.93}\sd{$\pm$.02} & \textbf{0.05}\sd{$\pm$.02} & \textbf{100} & 0.27\sd{$\pm$.02} & \textbf{151}\sd{$\pm$9} & \textbf{495}\sd{$\pm$30} & 7.3\sd{$\pm$.2} & 10.1\sd{$\pm$1.6} & \textbf{0.92}\sd{$\pm$.04} & \textbf{0.05}\sd{$\pm$.03} \\
+MOAR-3D kino.\ sweep & \textbf{100} & 15.4$^\dagger$\sd{(4.5)} & 338 & 1072 & \textbf{7.1} & \textbf{11.3} & 0.84 & 0.13 & \textbf{100} & 19.5$^\dagger$\sd{(17.0)} & 165 & 540 & \textbf{7.5} & \textbf{10.6} & 0.83 & 0.17 \\
+Fast-Planner~\cite{zhou2019} & \textbf{100} & \textbf{0.028}\sd{$\pm$.002} & 339 & 1075 & 1.3 & 6.0 & 0.17 & 0.59 & \textbf{100} & \textbf{0.012} & 170 & 558 & 1.8 & 6.5 & 0.18 & 0.83 \\
+Kino.\ RRT$^*$ & 90 & 60.0 & 369\sd{$\pm$8} & 1171\sd{$\pm$26} & 1.6\sd{$\pm$.5} & 6.2\sd{$\pm$.6} & 0.25\sd{$\pm$.10} & 0.51\sd{$\pm$.09} & \textbf{100} & 60.0 & 206\sd{$\pm$5} & 672\sd{$\pm$15} & 2.7\sd{$\pm$.9} & 6.5\sd{$\pm$.5} & 0.28\sd{$\pm$.16} & 0.69\sd{$\pm$.21} \\
+\cmidrule(lr){1-17}
+\rx{A$^*$} & \rx{0} & \rx{0.017\sd{$\pm$.002}} & \rx{251} & \rx{796} & \rx{1.5} & \rx{5.5} & -- & -- & \rx{0} & \rx{0.004\sd{$\pm$.003}} & \rx{139} & \rx{458} & \rx{2.0} & \rx{6.3} & -- & -- \\
+\rx{RRT$^*$} & \rx{0} & \rx{0.91\sd{$\pm$.01}} & \rx{270\sd{$\pm$4}} & \rx{854\sd{$\pm$14}} & \rx{1.6\sd{$\pm$.4}} & \rx{5.6\sd{$\pm$.5}} & -- & -- & \rx{0} & \rx{0.75} & \rx{186\sd{$\pm$22}} & \rx{605\sd{$\pm$69}} & \rx{2.3\sd{$\pm$.9}} & \rx{6.4\sd{$\pm$.8}} & -- & -- \\
+\rx{MOAR-3D~\cite{petit2024} sweep} & \rx{0} & \rx{0.36$^\dagger$\sd{(.60)}} & \rx{255} & \rx{808} & \rx{7.1} & \rx{9.6} & \rx{0.98} & \rx{0.01} & \rx{0} & \rx{0.22$^\dagger$\sd{(.25)}} & \rx{147} & \rx{484} & \rx{7.5} & \rx{9.8} & \rx{0.95} & \rx{0.03} \\
+\rx{Ahmed and Deb~\cite{ahmed2011}} & \rx{0} & \rx{1.51\sd{$\pm$.08}} & \rx{248\sd{$\pm$6}} & \rx{783\sd{$\pm$19}} & \rx{4.3\sd{$\pm$1.1}} & \rx{8.0\sd{$\pm$.8}} & \rx{0.79\sd{$\pm$.13}} & \rx{0.10\sd{$\pm$.09}} & \rx{0} & \rx{0.94\sd{$\pm$.04}} & \rx{152\sd{$\pm$11}} & \rx{496\sd{$\pm$34}} & \rx{6.5\sd{$\pm$1.2}} & \rx{10.4\sd{$\pm$1.3}} & \rx{0.85\sd{$\pm$.07}} & \rx{0.14\sd{$\pm$.07}} \\
+\rx{A$^*$pex~\cite{zhang2022}} & \rx{0} & \rx{23.9\sd{$\pm$.5}} & \rx{255} & \rx{808} & \rx{7.1} & \rx{11.9} & \rx{0.98} & \rx{0.02} & \rx{0} & \rx{103\sd{$\pm$2}} & \rx{147} & \rx{484} & \rx{7.5} & \rx{12.4} & \rx{0.94} & \rx{0.03} \\
+\rx{PO-RRT$^*$~\cite{batonisashvili2026}} & \rx{0} & \rx{5.01} & \rx{311\sd{$\pm$13}} & \rx{986\sd{$\pm$41}} & \rx{1.9\sd{$\pm$.4}} & \rx{6.3\sd{$\pm$.8}} & \rx{0.35\sd{$\pm$.11}} & \rx{0.41\sd{$\pm$.10}} & \rx{0} & \rx{5.01} & \rx{218\sd{$\pm$46}} & \rx{707\sd{$\pm$143}} & \rx{4.2\sd{$\pm$1.2}} & \rx{8.7\sd{$\pm$.9}} & \rx{0.48\sd{$\pm$.17}} & \rx{0.47\sd{$\pm$.23}} \\
+\bottomrule
+\end{tabular*}
+\\[2pt]
+\parbox{\textwidth}{\fontsize{6}{7}\selectfont SR: success rate. Pl.\,Time: planning time. Dur.: duration. $d_\text{min}$, $d_\text{mean}$: minimum and mean clearance. HV: hypervolume. IGD$^+$: inverted generational distance plus. \rx{Gray: trajectories violate constraints.} $^\dagger$median (IQR) shown instead of mean $\pm$ std because of skewed distribution.}
+\end{table*}
+% ---- PAPER TEXT (end) ----
+\end{document}

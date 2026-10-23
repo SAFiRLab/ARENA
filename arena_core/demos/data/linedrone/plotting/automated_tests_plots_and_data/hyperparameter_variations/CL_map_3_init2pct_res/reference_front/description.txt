@@ -1,0 +1,4 @@
+Reference front of CL_map_3 (500 runs)
+
+ARENA initialization: 2% shortest path A*, 2% safer RRT (SDF), the rest random RRT. Final evaluation of the
+reported solutions at half the octomap resolution (evaluation_spacing -1), run 2026-10-15

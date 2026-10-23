@@ -37,6 +37,12 @@ population_size=250
 nurbs_sample_size=250
 num_iter=500
 
+# Every solution of the reports exported with its clearance (average and minimum distance to the inflated octomap on the
+# samples of the final evaluation) next to the reports, to plot the clearance of the reference front (analysis only, not
+# part of the planning time)
+solutions_file="/home/dev_ws/data_output/navigation_3d/report_3d_reference_$(date +%Y-%m-%d_%H-%M-%S)_solutions.csv"
+start_planner="$(dirname "$(readlink -f "$0")")/../../../start_planner_node.sh"
+
 trap 'trap - INT TERM; stop_testbench_nodes; exit 1' INT TERM
 
 if [ "$TESTBENCH_TERMINAL" = "tmux" ]; then
@@ -58,6 +64,7 @@ sleep 1.0
 run_in_terminal "testbench" "ros2 launch arena_core testbench_launch.py \
     map_name:=${map_name} \
     world_name:=reference \
+    planner_start_command:='${start_planner} arena ${solutions_file}' \
     is_hyperparameter_variation_tests:=true \
     is_step_variation_tests:=false \
     hyperparameter_name:=rrt_range \

@@ -1,0 +1,56 @@
+{
+  "name": "Cluttered environment",
+  "start": {
+    "xy": [
+      250,
+      8
+    ],
+    "ha": "right",
+    "va": "top"
+  },
+  "goal": {
+    "xy": [
+      1320,
+      880
+    ],
+    "va": "top"
+  },
+  "labels": [
+    {
+      "scenario": "high_winds",
+      "xy": [
+        1180,
+        150
+      ],
+      "ha": "right",
+      "arrow_to": [
+        1288,
+        116
+      ]
+    },
+    {
+      "scenario": "low_gps",
+      "xy": [
+        1250,
+        505
+      ],
+      "ha": "right",
+      "text": "Low GPS\nsignal",
+      "arrow_to": [
+        1373,
+        555
+      ]
+    },
+    {
+      "scenario": "low_battery",
+      "xy": [
+        800,
+        730
+      ],
+      "arrow_to": [
+        1040,
+        631
+      ]
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+\documentclass[journal]{IEEEtran}
+\usepackage{amsmath,amssymb}
+
+% Standalone preview of the voting subsection. Only the section between the two "PAPER TEXT" markers goes in the paper.
+\makeatletter
+\refstepcounter{figure}\label{fig:arena_pipeline}  % Stands for the ARENA pipeline figure of the paper
+\makeatother
+
+\begin{document}
+
+% ---------------------------------------- PAPER TEXT (start) ----------------------------------------
+\subsubsection{Voting}
+\label{sec:voting}
+A voting algorithm selects the trajectory to execute from the approximated Pareto set $\mathcal{P}$ according to externally estimated operational risk indicators (Fig.~\ref{fig:arena_pipeline}, block (4)). Let $\mathbf{r} = [\mathcal{WR}, \mathcal{CR}, \mathcal{LR}, \mathcal{BR}] \in [0, 1]^4$ denote normalized estimates of wind, communication, localization, and battery operational risks, respectively. A value of 0 corresponds to nominal operational risk, while 1 denotes a critical operating condition. As mentioned in \cite{petit2024}, their computation is application- and platform-dependent and is outside the scope of this work. ARENA therefore treats them as exogenous inputs, which, in the power-line inspection application considered here, are based on wind speed, motor saturation, data transmission speed, GPS satellite availability, dilution of precision, battery level, and return-to-home distance.
+
+The costs $f_{i,j}$ of every solution $i \in \mathcal{P}$ and objective $j \in \{T, S, E\}$ are first normalized over the current set, so that no offline reference is needed:
+\begin{equation}
+    \label{eq:cost_normalization}
+    \hat{f}_{i,j} = \frac{f_{i,j} - \min_{l \in \mathcal{P}} f_{l,j}}{\max_{l \in \mathcal{P}} f_{l,j} - \min_{l \in \mathcal{P}} f_{l,j}} \in [0, 1].
+\end{equation}
+The influence of each risk on each objective is described by the matrix $\mathbf{A} = [a_{j,r}]$, with rows $T$, $S$, $E$ and columns $\mathcal{WR}$, $\mathcal{CR}$, $\mathcal{LR}$, $\mathcal{BR}$:
+\begin{equation}
+    \label{eq:influence_matrix}
+    \mathbf{A} =
+    \begin{bmatrix}
+        -1 & -1 & -1 & 1 \\
+        1 & 1 & 1 & -1 \\
+        \tfrac{1}{2} & 0 & 0 & \tfrac{1}{2}
+    \end{bmatrix}.
+\end{equation}
+Wind, communication, and localization risks favor safety over time, wind and battery risks also favor energy, and the battery risk favors time over safety. Each column is scaled to a largest entry of 1, so that every risk has the same authority. The coefficients of the objectives are
+\begin{equation}
+    \label{eq:coefficient_adjustment_functions}
+    k_{j} = \frac{k_{j,0} \prod_{r} (1 - r)^{-\beta a_{j,r}}}{\sum_{m \in \{T, S, E\}} k_{m,0} \prod_{r} (1 - r)^{-\beta a_{m,r}}},
+\end{equation}
+where $k_{j,0}$ are the nominal coefficients and $\beta$ is a gain. By construction, $k_{T} + k_{S} + k_{E} = 1$ for any risks and $k_{j} = k_{j,0}$ under nominal conditions. For low risks, Eq.~\ref{eq:coefficient_adjustment_functions} reduces to a linear adjustment of the nominal coefficients,
+\begin{equation}
+    \label{eq:coefficient_first_order}
+    k_{j} \approx k_{j,0} \Big(1 + \beta \big(\textstyle\sum_{r} a_{j,r} r - \sum_{m} k_{m,0} \sum_{r} a_{m,r} r\big)\Big),
+\end{equation}
+while, as a risk approaches 1, the coefficient of the objective it influences most tends to 1: a critical wind, communication, or localization risk selects the safest trajectory of $\mathcal{P}$, and a critical battery risk the fastest one.
+
+The selected trajectory minimizes the augmented weighted Tchebycheff scalarization of the normalized costs:
+\begin{equation}
+    \label{eq:voting_equation}
+    i^{*} = \operatorname*{arg\,min}_{i \in \mathcal{P}} \Big( \max_{j} k_{j} \hat{f}_{i,j} + \epsilon \sum_{j} k_{j} \hat{f}_{i,j} \Big),
+\end{equation}
+where $\epsilon \ll 1$ breaks ties toward non-dominated solutions. Unlike weighted sums of costs or of ranks, which can only select part of the Pareto set, every Pareto-optimal solution is the unique minimizer of Eq.~\ref{eq:voting_equation} for some coefficients \cite{steuer1983, miettinen1999}, so any trajectory of $\mathcal{P}$ can be reached by the risks. We use $k_{j,0} = 1/3$, $\beta = 2$, and $\epsilon = 10^{-3}$. Adjusting the objectives' influence from the risks in real time addresses a key challenge in multi-objective optimization \cite{hayes2022}. The entries of $\mathbf{A}$ are specific to the power-line inspection problem considered in this paper and can be adapted to other UAV platforms and mission types.
+% ---------------------------------------- PAPER TEXT (end) ----------------------------------------
+
+\begin{thebibliography}{4}
+\bibitem{petit2024} [Reference \texttt{petit2024} of the paper's bibliography.]
+\bibitem{hayes2022} [Reference \texttt{hayes2022} of the paper's bibliography.]
+\bibitem{steuer1983} R.~E. Steuer and E.-U. Choo, ``An interactive weighted Tchebycheff procedure for multiple objective programming,'' \emph{Math. Program.}, vol.~26, no.~3, pp. 326--344, 1983.
+\bibitem{miettinen1999} K.~Miettinen, \emph{Nonlinear Multiobjective Optimization}. Boston, MA, USA: Kluwer, 1999.
+\end{thebibliography}
+
+\end{document}

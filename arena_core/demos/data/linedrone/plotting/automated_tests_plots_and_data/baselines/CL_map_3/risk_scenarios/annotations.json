@@ -1,0 +1,55 @@
+{
+  "name": "Power line environment",
+  "start": {
+    "xy": [
+      300,
+      700
+    ],
+    "va": "top"
+  },
+  "goal": {
+    "xy": [
+      730,
+      180
+    ],
+    "ha": "right",
+    "va": "bottom"
+  },
+  "labels": [
+    {
+      "scenario": "high_winds",
+      "xy": [
+        1140,
+        490
+      ],
+      "ha": "right",
+      "arrow_to": [
+        961,
+        320
+      ]
+    },
+    {
+      "scenario": "low_gps",
+      "xy": [
+        850,
+        30
+      ],
+      "arrow_to": [
+        906,
+        187
+      ]
+    },
+    {
+      "scenario": "low_battery",
+      "xy": [
+        10,
+        520
+      ],
+      "ha": "left",
+      "arrow_to": [
+        420,
+        613
+      ]
+    }
+  ]
+}

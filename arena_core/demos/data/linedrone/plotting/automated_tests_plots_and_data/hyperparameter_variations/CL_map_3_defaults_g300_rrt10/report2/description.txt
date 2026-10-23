@@ -1,0 +1,5 @@
+Number of sample_size variation from 11 to 251
+
+ARENA initialization: 2% shortest path A*, 2% safer RRT (SDF), the rest random RRT. Final evaluation of the
+reported solutions at half the octomap resolution (evaluation_spacing -1). Defaults: 300 generations, population 40,
+50 samples, RRT range 10 m. Run 2026-10-18

@@ -7,6 +7,11 @@
 /**:
     ros__parameters:
         kino_astar:
+            # Fast-Planner as released (github.com/HKUST-Aerial-Robotics/Fast-Planner): per-component limits and a single
+            # primitive duration. Options (not used for the paper): norm_limits true limits the norms of the velocity and of
+            # the inputs (and checks the shot), time_res < 1 adds the durations max_tau * time_res * k (finer velocities)
+            norm_limits: false
+            time_res: 1.0
             max_tau: 0.4                    # s, duration of the motion primitives (0.6 in Fast-Planner, see above)
             init_max_tau: 0.8               # s, primitives of the first search loop
             w_time: 10.0                    # rho

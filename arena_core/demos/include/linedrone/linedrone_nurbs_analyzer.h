@@ -69,6 +69,12 @@ struct LinedroneNurbsAnalyzerConfig
     // the costs of the reports are evaluated without this rejection.
     bool early_exit_on_constraint_violation_ = false;
 
+    // Safety cost: false (default), mean of the collision cost over the samples + its max; true, collision cost integrated
+    // along the path (every sample weighted by half of its two segments) divided by the straight start-goal distance + its
+    // max. The mean decreases when the path gets longer in free space (the samples near the obstacles are a smaller share),
+    // the integral doesn't: a longer path with the same exposure has the same safety cost and is dominated in time.
+    bool integral_safety_cost_ = false;
+
     // Robot power consumption in steady state (in Watts)
     double robot_permanent_power_roll_;
     double robot_permanent_power_pitch_;
@@ -229,9 +235,11 @@ private:
      * @param a_in_safety_cost False for the start and the goal: they are fixed by the mission, their proximity to the
      *                         obstacles would set a floor to the safety cost (max term) that no trajectory can lower.
      *                         Their occupancy is still checked.
+     * @param a_weight Weight of the collision cost of the point in the safety cost (integral_safety_cost_: length of
+     *                 path represented by the sample, 1 otherwise).
      * @return True if the occupancy at the point respects the occupancy constraint (at most max_occupancy_).
      */
-    bool evalCollisionCost(const Eigen::Vector3d& a_point1, bool a_in_safety_cost = true);
+    bool evalCollisionCost(const Eigen::Vector3d& a_point1, bool a_in_safety_cost = true, double a_weight = 1.0);
 
     /**
      * @brief Evaluate the insertion cost based on the NURBS curve and environment.

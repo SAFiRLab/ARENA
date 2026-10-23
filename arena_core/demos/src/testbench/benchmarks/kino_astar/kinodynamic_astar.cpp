@@ -60,6 +60,8 @@ KinodynamicAstar::KinodynamicAstar(const KinodynamicAstarConfig& a_config, Occup
     lambda_heu_ = config_.lambda_heu;
     allocate_num_ = config_.allocate_num;
     check_num_ = config_.check_num;
+    time_res_ = config_.time_res;
+    norm_limits_ = config_.norm_limits;
     tie_breaker_ = 1.0 + 1.0 / 10000;
 
     // init()
@@ -141,6 +143,8 @@ int KinodynamicAstar::search(Eigen::Vector3d start_pt, Eigen::Vector3d start_v, 
         {
             if (is_shot_succ_)
                 return REACH_END;
+            else if (norm_limits_)
+                path_nodes_.clear(); // Shot beyond the limits (checked with norm_limits only): the search goes on
             else if (cur_node->parent != NULL)
                 return NEAR_END;
             else
@@ -150,7 +154,7 @@ int KinodynamicAstar::search(Eigen::Vector3d start_pt, Eigen::Vector3d start_v, 
         cur_node->node_state = IN_CLOSE_SET;
         iter_num_ += 1;
 
-        double res = 1 / 2.0, time_res = 1 / 1.0, time_res_init = 1 / 20.0;
+        double res = 1 / 2.0, time_res = time_res_, time_res_init = 1 / 20.0;
         Eigen::Matrix<double, 6, 1> cur_state = cur_node->state;
         Eigen::Matrix<double, 6, 1> pro_state;
         std::vector<PathNodePtr> tmp_expand_nodes;
@@ -171,9 +175,11 @@ int KinodynamicAstar::search(Eigen::Vector3d start_pt, Eigen::Vector3d start_v, 
                     for (double az = -max_acc_; az <= max_acc_ + 1e-3; az += max_acc_ * res)
                     {
                         um << ax, ay, az;
+                        if (norm_limits_ && um.norm() > max_acc_ + 1e-6)
+                            continue;
                         inputs.push_back(um);
                     }
-            for (double tau = time_res * max_tau_; tau <= max_tau_; tau += time_res * max_tau_)
+            for (double tau = time_res * max_tau_; tau <= max_tau_ + 1e-6; tau += time_res * max_tau_)
                 durations.push_back(tau);
         }
 
@@ -195,7 +201,8 @@ int KinodynamicAstar::search(Eigen::Vector3d start_pt, Eigen::Vector3d start_v, 
 
                 // Check maximal velocity
                 Eigen::Vector3d pro_v = pro_state.tail(3);
-                if (fabs(pro_v(0)) > max_vel_ || fabs(pro_v(1)) > max_vel_ || fabs(pro_v(2)) > max_vel_)
+                if (norm_limits_ ? pro_v.norm() > max_vel_ :
+                    fabs(pro_v(0)) > max_vel_ || fabs(pro_v(1)) > max_vel_ || fabs(pro_v(2)) > max_vel_)
                     continue;
 
                 // Check not in the same voxel
@@ -365,7 +372,20 @@ bool KinodynamicAstar::computeShotTraj(Eigen::VectorXd state1, Eigen::VectorXd s
     Eigen::VectorXd poly1d, t;
 
     /* ---------- forward checking of trajectory ---------- */
-    // The velocity and acceleration limits aren't checked (commented out in Fast-Planner)
+    // The velocity and acceleration limits aren't checked in Fast-Planner (its check is commented out, the B-spline
+    // optimization makes the trajectory feasible). With norm_limits, the shot is the end of the returned trajectory: its
+    // acceleration (linear in time, largest norm at an end) and its velocity (every 0.01 s) must respect the limits
+    if (norm_limits_)
+    {
+        if ((2.0 * b).norm() > max_acc_ + 1e-9 || (2.0 * b + 6.0 * a * t_d).norm() > max_acc_ + 1e-9)
+            return false;
+        for (double time = 0.0; time <= t_d + 0.01; time += 0.01)
+        {
+            const double tc = std::min(time, t_d);
+            if ((c + 2.0 * b * tc + 3.0 * a * tc * tc).norm() > max_vel_ + 1e-9)
+                return false;
+        }
+    }
     double t_delta = t_d / 10;
     for (double time = t_delta; time <= t_d; time += t_delta)
     {

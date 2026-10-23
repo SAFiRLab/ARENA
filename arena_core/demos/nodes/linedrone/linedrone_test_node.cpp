@@ -890,6 +890,10 @@ void LinedroneTestNode::initializerPlanning()
     Eigen::MatrixXd bounds = costmap_mapping_->getMapBounds();
     Eigen::Vector3d min_bounds = bounds.row(0).transpose();
     Eigen::Vector3d max_bounds = bounds.row(1).transpose();
+    // optimization.bounds_z_top_margin: the bounds (RRT, A* seeds and optimization) extend above the highest voxel of the
+    // octomap by this margin (m), the space above the map is free with a null collision cost
+    if (this->has_parameter("optimization.bounds_z_top_margin"))
+        max_bounds(2) += this->get_parameter("optimization.bounds_z_top_margin").as_double();
 
     ompl_planner_->setBounds(min_bounds, max_bounds);
 
@@ -1382,10 +1386,17 @@ void LinedroneTestNode::updateOptimizationParameters()
     if (population_size_ % 4 != 0)
         population_size_ += 4 - (population_size_ % 4);
 
+    // optimization.integral_safety_cost (off by default): safety cost integrated along the path instead of averaged over
+    // the samples (LinedroneNurbsAnalyzerConfig::integral_safety_cost_), in every analyzer (optimizer and reports)
+    const bool integral_safety_cost = this->has_parameter("optimization.integral_safety_cost") &&
+                                      this->get_parameter("optimization.integral_safety_cost").as_bool();
+    const bool safety_cost_changed = integral_safety_cost != linedrone_config.integral_safety_cost_;
+    linedrone_config.integral_safety_cost_ = integral_safety_cost;
+
     // Sample size of the costs reported to the testbench, 0 (or not set): the costs of the optimizer
     const int64_t evaluation_sample_size = this->has_parameter("optimization.evaluation_sample_size") ?
         this->get_parameter("optimization.evaluation_sample_size").as_int() : 0;
-    if (evaluation_sample_size != static_cast<int64_t>(evaluation_sample_size_))
+    if (evaluation_sample_size != static_cast<int64_t>(evaluation_sample_size_) || safety_cost_changed)
     {
         evaluation_sample_size_ = static_cast<unsigned int>(std::max<int64_t>(evaluation_sample_size, 0));
         evaluation_nurbs_analyzer_ = nullptr;
@@ -1409,7 +1420,7 @@ void LinedroneTestNode::updateOptimizationParameters()
 
     unsigned int sample_size = this->get_parameter("optimization.sample_size").as_int();
     if (sample_size == linedrone_config.base_config.sample_size && nurbs_ && nurbs_->getSampleSize() == static_cast<int>(sample_size) &&
-        early_exit == early_exit_ && verify_early_exit == verify_early_exit_)
+        early_exit == early_exit_ && verify_early_exit == verify_early_exit_ && !safety_cost_changed)
         return;
 
     early_exit_ = early_exit;
@@ -1429,8 +1440,9 @@ void LinedroneTestNode::updateOptimizationParameters()
         std::make_shared<arena_demos::LinedroneNurbsAnalyzer>(costmap_mapping_, linedrone_config,
                                                               std::unordered_map<std::string, arena_core::OrientedBoundingBoxWrapper>{}) :
         nullptr;
-    RCLCPP_INFO(get_logger(), "Analyzer of the optimizer: early exit on constraint violation %s%s", early_exit_ ? "on" : "off",
-                verify_early_exit_ ? ", every fitness checked against the full evaluation" : "");
+    RCLCPP_INFO(get_logger(), "Analyzer of the optimizer: early exit on constraint violation %s%s, safety cost %s", early_exit_ ? "on" : "off",
+                verify_early_exit_ ? ", every fitness checked against the full evaluation" : "",
+                linedrone_config.integral_safety_cost_ ? "integrated along the path" : "mean over the samples");
 }
 
 void LinedroneTestNode::updateVotingAlgorithm()

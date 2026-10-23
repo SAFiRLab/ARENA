@@ -10,8 +10,12 @@ source "$(dirname "$(readlink -f "$0")")/terminal_utils.sh"
 #   no argument: ARENA (linedrone_test_node)
 #   moar_3d, rrt_star or spline_nsga2: benchmark planner started in place of ARENA (benchmark_planner_launch.py), with
 #   its parameters (config/linedrone/benchmarks/<planner>_params.yaml by default)
-if [ -z "$1" ]; then
-    run_in_terminal "planner" "ros2 launch arena_core linedrone_test_node_launch.py"
+#   arena [<solutions file>]: ARENA, every solution of its reports exported with its clearance to <solutions file>
+#   (optimization.export_solutions_file, analysis only)
+if [ -z "$1" ] || [ "$1" = "arena" ]; then
+    export_arg=""
+    [ "$1" = "arena" ] && [ -n "$2" ] && export_arg="export_solutions_file:=$2"
+    run_in_terminal "planner" "ros2 launch arena_core linedrone_test_node_launch.py $export_arg"
 else
     params_arg=""
     [ -n "$2" ] && params_arg="params_file:=$2"

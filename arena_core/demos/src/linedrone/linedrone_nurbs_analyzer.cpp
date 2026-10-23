@@ -88,7 +88,7 @@ void LinedroneNurbsAnalyzer::evalTimeCost(const double a_distance, const double 
         linedrone_output_.time_output_ += a_distance / a_velocity; // Normal case
 }
 
-bool LinedroneNurbsAnalyzer::evalCollisionCost(const Eigen::Vector3d& a_point1, bool a_in_safety_cost)
+bool LinedroneNurbsAnalyzer::evalCollisionCost(const Eigen::Vector3d& a_point1, bool a_in_safety_cost, double a_weight)
 {
     double occupancy = 0.0;
     auto capability = costmap_mapping_->getCapability<arena_demos::CostSDFCapability>();
@@ -97,7 +97,7 @@ bool LinedroneNurbsAnalyzer::evalCollisionCost(const Eigen::Vector3d& a_point1, 
         if (a_in_safety_cost)
         {
             double node_collision_cost = capability->getCollisionCost(a_point1);
-            linedrone_output_.total_collision_cost_ += node_collision_cost;
+            linedrone_output_.total_collision_cost_ += a_weight * node_collision_cost;
             if (node_collision_cost > linedrone_output_.max_collision_cost_)
                 linedrone_output_.max_collision_cost_ = node_collision_cost;
 
@@ -228,6 +228,17 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
     // Rejection at the first constraint violation (optimizer only, see LinedroneNurbsAnalyzerConfig)
     const bool early_exit = linedrone_config.early_exit_on_constraint_violation_;
 
+    // Weight of the collision cost of sample i in the safety cost: 1 (mean), or with integral_safety_cost_ the length of
+    // path it represents, half of its two segments
+    const unsigned int nb_of_samples = linedrone_config.base_config.sample_size;
+    auto safetyWeight = [&](unsigned int i) -> double
+    {
+        if (!linedrone_config.integral_safety_cost_ || i == 0 || i + 1 >= nb_of_samples)
+            return 1.0;
+        return 0.5 * ((a_curve_points.col(i).head<3>() - a_curve_points.col(i - 1).head<3>()).norm() +
+                      (a_curve_points.col(i + 1).head<3>() - a_curve_points.col(i).head<3>()).norm());
+    };
+
     for (unsigned int i = 0; i < linedrone_config.base_config.sample_size - 3; i++)
     {
         Eigen::Map<const Eigen::Vector3d> point1(a_curve_points.col(i).data());
@@ -242,7 +253,7 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
         evalTimeCost(distance, velocity_DUA_i);
 
         // Evaluate collision cost between point1 and point2 (the start, sample 0, isn't part of the safety cost)
-        if (!evalCollisionCost(point1, i > 0) && early_exit)
+        if (!evalCollisionCost(point1, i > 0, safetyWeight(i)) && early_exit)
             return rejectEvaluation(a_output);
 
         // Evaluate insertion cost (if needed, currently not implemented)
@@ -281,7 +292,7 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
         evalTimeCost(distance, velocity_DUA_i);
 
         // Evaluate collision cost for the last segment
-        if (!evalCollisionCost(point1) && early_exit)
+        if (!evalCollisionCost(point1, true, safetyWeight(i)) && early_exit)
             return rejectEvaluation(a_output);
 
         // Evaluate insertion cost (if needed, currently not implemented)
@@ -327,13 +338,19 @@ void LinedroneNurbsAnalyzer::eval(const Eigen::MatrixXd& a_curve_points, arena_c
         // The safety cost can't be evaluated without the SDF octomap, reject the solution instead of returning NaN
         a_output.fitness_array_[1] = std::numeric_limits<double>::max();
     }
-    else if (linedrone_output_.total_insertion_cost_ > 0.0)
-    {
-        a_output.fitness_array_[1] = ((linedrone_output_.total_collision_cost_ / linedrone_output_.nb_of_collision_checks_) + linedrone_output_.max_collision_cost_) + 
-        ((linedrone_output_.total_insertion_cost_ / linedrone_output_.nb_of_insertion_checks_) + linedrone_output_.max_insertion_cost_);
-    }
     else
-        a_output.fitness_array_[1] = (linedrone_output_.total_collision_cost_ / linedrone_output_.nb_of_collision_checks_) + linedrone_output_.max_collision_cost_;
+    {
+        // Mean of the collision cost over the samples, or with integral_safety_cost_ its integral along the path divided
+        // by the straight start-goal distance (the same for every candidate of a planning)
+        const double straight_distance = (a_curve_points.col(nb_of_samples - 1).head<3>() - a_curve_points.col(0).head<3>()).norm();
+        const double collision_term = linedrone_config.integral_safety_cost_ ?
+            linedrone_output_.total_collision_cost_ / std::max(straight_distance, 1.0e-6) :
+            linedrone_output_.total_collision_cost_ / linedrone_output_.nb_of_collision_checks_;
+        a_output.fitness_array_[1] = collision_term + linedrone_output_.max_collision_cost_;
+        if (linedrone_output_.total_insertion_cost_ > 0.0)
+            a_output.fitness_array_[1] += (linedrone_output_.total_insertion_cost_ / linedrone_output_.nb_of_insertion_checks_) +
+                                          linedrone_output_.max_insertion_cost_;
+    }
 
     a_output.fitness_array_[2] = linedrone_output_.total_energy_;
 

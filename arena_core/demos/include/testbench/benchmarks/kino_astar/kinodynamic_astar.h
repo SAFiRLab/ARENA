@@ -67,6 +67,12 @@ struct KinodynamicAstarConfig
     int allocate_num = 100000;      // Maximum number of nodes
     int check_num = 5;              // Collision checks along a primitive
     double vel_margin = 0.0;        // Added to max_vel
+    // Durations of the motion primitives: max_tau * time_res * k, k = 1, ..., 1 / time_res (time_res of the search loop,
+    // 1 in Fast-Planner: the single duration max_tau)
+    double time_res = 1.0;
+    // false (Fast-Planner): max_vel and max_acc limit every component. true: they limit the norms of the velocity and of the
+    // input (the inputs of the grid {-max_acc, -max_acc / 2, 0, max_acc / 2, max_acc}^3 with a larger norm are skipped)
+    bool norm_limits = false;
     Eigen::Vector3d origin = Eigen::Vector3d::Zero();   // Region of the map (sdf_map getRegion: origin and size)
     Eigen::Vector3d map_size = Eigen::Vector3d::Ones();
 }; // struct KinodynamicAstarConfig
@@ -79,7 +85,8 @@ struct KinodynamicAstarConfig
  * the minimum-cost trajectory to the goal state (Pontryagin's minimum principle).
  *
  * Port of KinodynamicAstar (fast_planner/path_searching/src/kinodynamic_astar.cpp) without ROS: same search loop, inputs
- * {-max_acc, -max_acc / 2, 0, max_acc / 2, max_acc}^3, primitive duration max_tau, per-component velocity check, check_num
+ * {-max_acc, -max_acc / 2, 0, max_acc / 2, max_acc}^3, primitive durations max_tau * time_res * k (time_res = 1 in
+ * Fast-Planner), per-component velocity check (or norm limits with norm_limits), check_num
  * collision checks per primitive, pruning of the primitives ending in the same voxel, termination near the goal (within
  * ceil(1 / resolution) voxels) with the analytic expansion ("shot" trajectory, checked for collisions and map bounds
  * only, as in the code). The inflated occupancy of the SDF map is replaced by a_occupied (true: occupied), the nodes are
@@ -164,7 +171,8 @@ private:
     Eigen::MatrixXd coef_shot_;
     double t_shot_ = 0.0;
 
-    double max_tau_, init_max_tau_, max_vel_, max_acc_, w_time_, horizon_, lambda_heu_;
+    double max_tau_, init_max_tau_, max_vel_, max_acc_, w_time_, horizon_, lambda_heu_, time_res_;
+    bool norm_limits_;
     int allocate_num_, check_num_;
     double tie_breaker_;
     double resolution_, inv_resolution_;

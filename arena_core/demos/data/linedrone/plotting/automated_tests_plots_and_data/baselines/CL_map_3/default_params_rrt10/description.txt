@@ -1,0 +1,5 @@
+ARENA default hyperparameters (1000 generations, population 40, 50 samples), RRT range 10 m, 50 runs, CL_map_3
+
+ARENA initialization: 2% shortest path A*, 2% safer RRT (SDF), the rest random RRT. Final evaluation of the
+reported solutions at half the octomap resolution. Every reported solution exported with its clearance
+(*_solutions.csv: average and minimum distance to the inflated octomap). Run 2026-10-17

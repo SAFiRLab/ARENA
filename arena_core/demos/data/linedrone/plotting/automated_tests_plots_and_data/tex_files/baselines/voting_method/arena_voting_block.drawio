@@ -1,0 +1,73 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="arena-voting-block" name="Voting (block 4)">
+    <mxGraphModel dx="800" dy="400" grid="1" gridSize="2" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <!-- White inner box of block (4), replaces the rank-voting box; every element below is relative to it -->
+        <mxCell id="vote_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=none;arcSize=10;container=1;collapsible=0;recursiveResize=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="262" height="146" as="geometry" />
+        </mxCell>
+        <!-- Cost normalization over the population set (Eq. cost_normalization) -->
+        <mxCell id="norm" value="Cost&lt;br&gt;normalization" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=14;fontFamily=Helvetica;spacing=0;" vertex="1" parent="vote_box">
+          <mxGeometry x="142" y="22" width="114" height="34" as="geometry" />
+        </mxCell>
+        <!-- Risk-based coefficients k_j (Eq. coefficient_adjustment_functions) -->
+        <mxCell id="coeffs" value="Risk-based&lt;br&gt;coefficients" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=14;fontFamily=Helvetica;spacing=0;" vertex="1" parent="vote_box">
+          <mxGeometry x="14" y="48" width="114" height="34" as="geometry" />
+        </mxCell>
+        <!-- Augmented weighted Tchebycheff selection (Eq. voting_equation) -->
+        <mxCell id="vote" value="Tchebycheff voting" style="triangle;direction=south;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=14;fontFamily=Helvetica;verticalAlign=top;spacingTop=-2;" vertex="1" parent="vote_box">
+          <mxGeometry x="4" y="98" width="254" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="pop_label" value="Population set" style="text;html=1;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontFamily=Helvetica;spacing=0;" vertex="1" parent="vote_box">
+          <mxGeometry x="10" y="12" width="124" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="f_label" value="&lt;i&gt;f̂&lt;/i&gt;" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=14;fontFamily=Helvetica;spacing=0;" vertex="1" parent="vote_box">
+          <mxGeometry x="204" y="74" width="16" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="k_label" value="&lt;i&gt;k&lt;/i&gt;" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=14;fontFamily=Helvetica;spacing=0;" vertex="1" parent="vote_box">
+          <mxGeometry x="76" y="81" width="16" height="18" as="geometry" />
+        </mxCell>
+        <!-- Input: population set from block (3), enters at the top left like before -->
+        <mxCell id="e_pop" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2.5;entryX=0.5;entryY=0;" edge="1" parent="vote_box" target="norm">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="0" y="8" as="sourcePoint" />
+            <Array as="points">
+              <mxPoint x="199" y="8" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- Input: risk factors from block (1), enters on the left -->
+        <mxCell id="e_risk" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2.5;entryX=0;entryY=0.5;" edge="1" parent="vote_box" target="coeffs">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="0" y="65" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_norm_vote" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2.5;exitX=0.5;exitY=1;" edge="1" parent="vote_box" source="norm">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="199" y="98" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_coeffs_vote" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2.5;exitX=0.5;exitY=1;" edge="1" parent="vote_box" source="coeffs">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="71" y="98" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <!-- Output: final solution to block (5), leaves at the bottom like before -->
+        <mxCell id="e_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;strokeWidth=2.5;" edge="1" parent="vote_box">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="131" y="138" as="sourcePoint" />
+            <mxPoint x="131" y="146" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <!-- Input: powerline inspection coefficients definition (k_j,0, A, beta) from the top of block (4), enters on the right; drawn last so it hops over the normalized costs -->
+        <mxCell id="e_def" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2.5;entryX=1;entryY=0.5;jumpStyle=arc;jumpSize=10;" edge="1" parent="vote_box" target="coeffs">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="262" y="65" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

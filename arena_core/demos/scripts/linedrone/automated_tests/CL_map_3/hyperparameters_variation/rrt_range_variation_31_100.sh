@@ -1,0 +1,41 @@
+#!/bin/bash
+
+source "$(dirname "$(readlink -f "$0")")/../../terminal_utils.sh"
+
+# Environment name var, only used to name the report
+# Possible env_name: A386, L1493, LP1, LP2, CD, CL
+env_name="CL"
+
+# Distance between the nodes of the RRT used to initialize the population, in meters (default: 10.0), extension of
+# rrt_range_variation.sh (1 to 30 m) from 31 to 100 m with the same step, to find where longer ranges start to degrade
+hyperparameter_name="rrt_range"
+hyperparameter_steps=1.0
+hyperparameter_min=31.0
+hyperparameter_max=100.0
+num_iter=10
+
+# The costs of the reported solutions are evaluated with evaluation_sample_size samples (linear interpolation of the
+# samples of the planner), the sample size of the reference fronts, so that the fronts of every setting are comparable
+evaluation_sample_size=250
+
+# Sample size of the optimization, the default of the sweeps (the planner's own value is in linedrone_problem_params.yaml)
+nurbs_sample_size=50
+
+run_in_terminal "costmap_3D" "ros2 launch arena_core costmap_3D_launch.py"
+
+# The testbench starts and restarts the planner by itself
+sleep 1.0
+run_in_terminal "testbench" "ros2 launch arena_core testbench_launch.py \
+    map_name:=map_test_3 \
+    world_name:=${env_name} \
+    is_hyperparameter_variation_tests:=true \
+    is_step_variation_tests:=false \
+    hyperparameter_name:=${hyperparameter_name} \
+    hyperparameter_min:=${hyperparameter_min} \
+    hyperparameter_max:=${hyperparameter_max} \
+    hyperparameter_steps:=${hyperparameter_steps} \
+    hyperparameter_nb_of_iter:=${num_iter} \
+    evaluation_sample_size:=${evaluation_sample_size} \
+    fixed_nurbs_sample_size:=${nurbs_sample_size}"
+
+follow_testbench_nodes

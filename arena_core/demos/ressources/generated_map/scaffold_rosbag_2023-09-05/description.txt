@@ -1,0 +1,12 @@
+Octomap of the real lidar of the 2D navigation flight in the scaffoldings, ressources/2023-09-05-09-50-05.bag (ROS 1,
+252 s; no octomap topic in the bag). Converted bag (ROS 2 Humble, mcap): ressources/2023-09-05-09-50-05_ros2.
+Built by scripts/linedrone/map_generator/rosbag_octomap/run_bag_octomap.sh <bag> <this .bt> 84 --ground-align:
+    sources   /velodyne_points_throttled (VLP-16 mounted with its spin axis forward, 39 sweeps, ~23 before the takeoff),
+              deskewed with the per-point time; /scan (central rings flattened, 1265 slices at 10 Hz), up to 20 m
+    poses     bag TF map -> offset_base_link -> base_link -> velodyne, interpolated at the header stamps
+    ground    the bag altitude jumps 0.65 m at the takeoff (ground seen at z -1.0 before, -0.34 in flight): sensor
+              heights shifted so that the ground under every scan stays at the flight median (-0.34 m), shifts -0.19
+              to +0.69 m (+0.69 before the takeoff)
+    octomap   octomap_server 0.25 m, hit 0.7, miss 0.48, clamp 0.12/0.97, max range 40 m (as the simulated lidar map)
+Frame: the bag "map" frame (ENU, origin near the takeoff), ground at z ~ -0.34 m, scaffolding top at z ~ 6.1 m, the
+scaffolding rotated ~45 deg in x-y. Not cropped (occupied voxels from x -41 to 32, y -38 to 39 m).

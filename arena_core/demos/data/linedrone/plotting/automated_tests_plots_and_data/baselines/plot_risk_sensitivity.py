@@ -117,7 +117,36 @@ X_JITTER = 0.012  # Points of the same risk level drawn side by side
 
 
 def report_files(folder):
-    return sorted(f for f in glob.glob(os.path.join(folder, 'report_3d_*.csv')) if not f.endswith('_pareto_front.csv'))
+    return sorted(f for f in glob.glob(os.path.join(folder, 'report_3d_*.csv'))
+                  if not f.endswith('_pareto_front.csv') and not f.endswith('_solutions.csv'))
+
+
+def cost_key(time, safety, energy):
+    """Key of a solution by its reported costs (written with 6 decimals in the reports and in the exports)."""
+    return round(float(time), 4), round(float(safety), 5), round(float(energy), 2)
+
+
+def load_clearances(folders):
+    """Average clearance of every exported solution, by reported costs: report_3d_*_solutions.csv of the folders, every
+    solution of the reports with its reported costs and the average distance of its trajectory to the inflated octomap
+    (optimization.export_solutions_file of the planner)."""
+    table = {}
+    for folder in folders:
+        for path in sorted(glob.glob(os.path.join(folder, 'report_3d_*_solutions.csv'))):
+            with open(path, newline='') as f:
+                for row in csv.DictReader(f):
+                    table[cost_key(row['Time cost'], row['Security cost'], row['Energy cost'])] = \
+                        float(row['Average Closest Obstacle Distance'])
+    return table
+
+
+def clearance_of(clearances, costs, missing):
+    """Clearance of a solution from its costs (time, safety, energy), NaN and counted in missing[0] if not exported."""
+    value = clearances.get(cost_key(*costs[:3]))
+    if value is None:
+        missing[0] += 1
+        return float('nan')
+    return value
 
 
 def load_risk_sweep(folder):
@@ -299,32 +328,48 @@ def sweep_front(front, select, step=0.1, background=0.0):
     return rows
 
 
-def load_reference_front(path):
-    """Costs (time, safety, energy) of the estimated Pareto front of the reference runs and their metrics."""
+def load_reference_front(path, clearances=None):
+    """Costs (time, safety, energy) of the estimated Pareto front of the reference runs and their metrics, with the
+    average clearance of every solution if clearances (load_clearances) is given."""
     with open(path, newline='') as f:
         costs = np.array([[float(r['Time cost']), float(r['Security cost']), float(r['Energy cost'])]
                           for r in csv.DictReader(f)])
     metrics = [{'safety': c[1], 'duration': c[0], 'energy': c[2] * 1.0e-3, 'costs': list(c)} for c in costs]
+    if clearances is not None:
+        missing = [0]
+        for m, c in zip(metrics, costs):
+            m['clearance'] = clearance_of(clearances, c, missing)
+        if missing[0]:
+            print('Warning: {} of the {} solutions of {} have no exported clearance'.format(missing[0], len(costs), path),
+                  file=sys.stderr)
     return costs, metrics
 
 
-def load_sweep_fronts(folders):
-    """Risks (battery, wind, location) and safe solutions (time, safety, energy reported costs) of every planning of the
-    risk sweep tests of the folders."""
+def load_sweep_fronts(folders, clearances=None):
+    """Risks (battery, wind, location) and safe solutions (time, safety, energy reported costs, and the average clearance
+    if clearances (load_clearances) is given) of every planning of the risk sweep tests of the folders."""
     plannings = []
+    missing = [0]
     for folder in folders:
         for path in report_files(folder):
-            fronts = {}
+            fronts, seen = {}, set()
             with open(path.replace('.csv', '_pareto_front.csv'), newline='') as f:
                 for row in csv.DictReader(f):
                     if int(float(row['Safe'])) == 1:
-                        fronts.setdefault(row['Id'], []).append(
-                            [float(row['Time cost']), float(row['Security cost']), float(row['Energy cost'])])
+                        costs = [float(row['Time cost']), float(row['Security cost']), float(row['Energy cost'])]
+                        if clearances is not None:
+                            costs.append(clearance_of(clearances, costs, missing))
+                        fronts.setdefault(row['Id'], []).append(costs)
             with open(path, newline='') as f:
                 for row in csv.DictReader(f):
-                    if row['Id'] in fronts:
-                        plannings.append(((float(row['Baterry risk']), float(row['Wind risk']),
-                                           float(row['Location risk'])), np.array(fronts[row['Id']])))
+                    # One planning per Id (the reports of the hyperparameter tests have a row per trajectory sample)
+                    if row['Id'] in fronts and row['Id'] not in seen:
+                        seen.add(row['Id'])
+                        # The hyperparameter tests have no risk columns: plannings without risk
+                        plannings.append(((float(row.get('Baterry risk', 0.0)), float(row.get('Wind risk', 0.0)),
+                                           float(row.get('Location risk', 0.0))), np.array(fronts[row['Id']])))
+    if missing[0]:
+        print('Warning: {} solutions of the fronts have no exported clearance'.format(missing[0]), file=sys.stderr)
     return plannings
 
 
@@ -336,10 +381,12 @@ def replay_sweep_fronts(plannings, select, background=0.0):
         swept = [c for c, r in zip(RISK_ORDER, risks) if r != 0.0] or RISK_ORDER
         for column in swept:
             level = risks[RISK_ORDER.index(column)]
-            chosen = costs[select(costs, *background_risks(column, level, background))]
+            chosen = costs[select(costs[:, :3], *background_risks(column, level, background))]
             row = {r: 0.0 for r in RISK_ORDER}
             row.update({column: level, 'column': column, 'safety': chosen[1], 'duration': chosen[0],
                         'energy': chosen[2] * 1.0e-3})
+            if len(chosen) > 3:
+                row['clearance'] = chosen[3]
             rows.append(row)
     return rows
 
@@ -410,6 +457,13 @@ def main():
                         help='Add the multi-objective baselines A*pex and PO-RRT* (EXTRA_BANDS) to the bands')
     parser.add_argument('--moar-risk-sweep', default='moar3d_risk_sweep_k025',
                         help='Risk sweep tests of MOAR-3D with --fronts (it plans a single path, it doesn\'t vote)')
+    parser.add_argument('--clearance', action='store_true',
+                        help='With --reference-front or --sweep-fronts: first row = average obstacle clearance of the '
+                             'selected solution, from the exported solutions (report_3d_*_solutions.csv next to the '
+                             'reports) instead of the safety cost')
+    parser.add_argument('--fronts-folder',
+                        help='With --sweep-fronts: folder of baselines/<map> whose plannings give the fronts (e.g. '
+                             'default_params_rrt10) instead of the ARENA risk sweep tests')
     parser.add_argument('--output', help='Prefix of the figure files (default: baselines/<map>/risk_sensitivity<suffix>)')
     parser.add_argument('--size', nargs=2, type=float, default=[3.5, 3.9], metavar=('WIDTH', 'HEIGHT'))
     parser.add_argument('--dpi', type=int, default=400)
@@ -432,7 +486,8 @@ def main():
         output = args.output or os.path.join(base, 'risk_sensitivity_sweeps_' + args.voting + variant)
     else:
         output = args.output or os.path.join(base, 'risk_sensitivity' + (front_name if args.fronts else args.suffix))
-    metrics_of_rows = COST_METRICS if args.sweep_fronts or args.reference_front is not None else METRICS
+    metrics_of_rows = COST_METRICS if (args.sweep_fronts or args.reference_front is not None) and not args.clearance \
+        else METRICS
     select = selector(args.voting, args.k0, args.w0, args.safety_demand, args.battery_corner, args.gamma,
                       args.influence, args.risk_transform)
 
@@ -447,19 +502,20 @@ def main():
                                   'pareto_front_3d_estimated_front.csv')
     if args.reference_front is not None:
         path = args.reference_front or reference_path
-        front = load_reference_front(path)
+        front = load_reference_front(path, load_clearances([os.path.dirname(path)]) if args.clearance else None)
         arena = sweep_front(front, select, args.step, args.background)
         print('Reference front {}: {} solutions, {} selected over the risk sweep'.format(
             path, len(front[1]), len(set(r['solution'] for r in arena))))
         moar = []
     elif args.sweep_fronts:
-        folders = sweep_folders(base, 'arena_risk_sweep')
-        plannings = load_sweep_fronts(folders)
+        folders = [os.path.join(base, args.fronts_folder)] if args.fronts_folder else sweep_folders(base, 'arena_risk_sweep')
+        plannings = load_sweep_fronts(folders, load_clearances(folders) if args.clearance else None)
         if args.every_level:
             arena = []
             for _, costs in plannings:
-                metrics = [{'safety': c[1], 'duration': c[0], 'energy': c[2] * 1.0e-3} for c in costs]
-                arena += sweep_front((costs, metrics), select, args.step, args.background)
+                metrics = [dict({'safety': c[1], 'duration': c[0], 'energy': c[2] * 1.0e-3},
+                                **({'clearance': c[3]} if len(c) > 3 else {})) for c in costs]
+                arena += sweep_front((costs[:, :3], metrics), select, args.step, args.background)
         else:
             arena = replay_sweep_fronts(plannings, select, args.background)
         print('ARENA: {} plannings of {}{}'.format(len(plannings), ', '.join(os.path.basename(f) for f in folders),
@@ -517,6 +573,8 @@ def main():
             bests = np.array([costs[np.argmin(costs[:, objective])] for _, costs in plannings])
             best = {'duration': float(np.median(bests[:, 0])), 'safety': float(np.median(bests[:, 1])),
                     'energy': float(np.median(bests[:, 2])) * 1.0e-3}
+            if bests.shape[1] > 3:
+                best['clearance'] = float(np.nanmedian(bests[:, 3]))
             optimal.append((label, color, style, best))
             print('{} (median of the fronts): duration {:.1f} s, safety cost {:.3f}, energy {:.1f} kJ'.format(
                 label, best['duration'], best['safety'], best['energy']))

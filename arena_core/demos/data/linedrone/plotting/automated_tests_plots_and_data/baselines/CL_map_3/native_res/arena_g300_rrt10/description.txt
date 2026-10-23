@@ -1,0 +1,1 @@
+ARENA, 20 runs: 300 generations, population 40, sample size 50, RRT range 10 m (2 x the yaml default), 2% A* and 2% safer RRT seeds, final evaluation at half the octomap resolution, solutions exported. Run 2026-10-18 on an idle machine (ROS domain 79).

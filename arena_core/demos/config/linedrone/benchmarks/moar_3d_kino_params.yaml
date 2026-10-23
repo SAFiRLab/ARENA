@@ -1,0 +1,30 @@
+# MOAR-3D kinodynamic benchmark planner (nodes/testbench/benchmarks/moar_3d, mode kinodynamic): the MOAR planner in 3D
+# with the kinodynamic graph search (MoarKinodynamicSearch): states (cell, velocity) and double integrator primitives, so
+# that the trajectories respect the acceleration limit of the robot. Coefficients as moar_3d_params.yaml (Eq. 9 of MOAR).
+# The robot parameters are the ones of ARENA (linedrone_problem_params.yaml).
+/**:
+    ros__parameters:
+        moar_3d:
+            mode: "kinodynamic"
+            grid_resolution: 1.0            # Size of the grid cells in m (resolution of the octomaps of the tests)
+            clearance: 0.8                  # Valid cells: same clearance as the RRT of ARENA (OMPLStateValidityChecker)
+            sdf_min_distance: 2.0           # d_min and d_max of the collision cost C(d) of the SDF octomap
+            sdf_max_distance: 9.0           # (costmap_3D_params.yaml obstacle_influence_distance)
+            speeds:                         # Speeds of the MOAR implementation relative to the horizontal cruising speed
+                min_ratio: 0.8333           # v_MIN = 0.5 / 0.6
+                up_ratio: 0.9667            # 0.58 / 0.6
+                diagonal_up_ratio: 0.95     # 0.57 / 0.6
+                diagonal_down_ratio: 0.9667 # 0.58 / 0.6
+                down_ratio: 0.95            # 0.57 / 0.6
+                d_min: 2.0                  # v_sat = v_MIN below this obstacle distance (m)
+                d_max: 4.0                  # v_sat = v_MAX above this obstacle distance (m, d_max_speed of MOAR)
+            kinodynamic:
+                velocity_resolution: 0.25   # m/s, velocity lattice (every component)
+                max_input_steps: 1          # Inputs: velocity change of -1..1 lattice steps per axis and primitive
+                tau: 2.0                    # s, primitive duration (1 m at the maximum speed, one cell)
+                check_num: 5                # Checks per primitive (validity, speed limit, safety cost)
+                goal_radius: 1.5            # m, connection to the goal at rest from this distance
+                check_resolution: 0.2       # m, cache of the validity and of the SDF cost
+                time_tie_breaker: 0.01      # Added to k_T: without time cost, the speeds would be free (k_T = 0)
+                heuristic_weight: 1.0       # A* of MOAR (admissible heuristic)
+                sampling_step: 0.05         # s, sampling of the trajectory for its evaluation

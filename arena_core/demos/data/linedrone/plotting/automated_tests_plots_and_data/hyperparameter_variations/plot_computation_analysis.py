@@ -14,10 +14,10 @@ so its fronts are not directly comparable to a reference computed with another s
 adds it: its runs are scored against the same reference front, normalization and HV reference point as the other
 sweeps, without being used to build them (the other curves are the same with or without it).
 
-Benchmark planners (--baselines <label>=<report folder>, see compare_baselines.py): their mean planning time (+- std)
+Benchmark planners (--baselines <label>=<report folder>, baselines/<map>/native_res/<planner>): their mean planning time (+- std)
 and their mean IGD+ and hypervolume ratio are drawn as horizontal lines (grey shades, one marker per planner), they don't
 depend on the hyperparameters of ARENA. Their safe solutions are part of the reference front (non-dominated union), like
-in compare_baselines.py, --baselines-scored-only scores them without adding them to the reference front.
+in the baseline tables (tex_files/baselines/baseline_tables/load.py), --baselines-scored-only scores them without adding them to the reference front.
 
 Usage:
     python3 plot_computation_analysis.py [--sweeps <report folders>] [--reference <report folders>]
@@ -43,12 +43,14 @@ from plot_hyperparameter_variations import open_csv
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 
-# Swept hyperparameter -> (label, default value of the planner)
+# Swept hyperparameter -> (label, default value of the planner). Defaults since 2026-10-18 (linedrone_problem_params.yaml):
+# 300 generations and an RRT range of 10 m (1000 and 5 m before, the sweeps of CL_map_3_init2pct_res and older: pass
+# --defaults 1000 40 50 5 to plot them)
 HYPERPARAMETERS = {
-    'nb_of_generations': (r'$N_{gen}$', 1000.0),
+    'nb_of_generations': (r'$N_{gen}$', 300.0),
     'population_size': (r'$N_{pop}$', 40.0),
     'nurbs_sample_size': (r'$N_{nurbs}$', 50.0),
-    'rrt_range': (r'$\delta_{RRT}$', 5.0),  # The order of this dictionary is the order of the curves and legends
+    'rrt_range': (r'$\delta_{RRT}$', 10.0),  # The order of this dictionary is the order of the curves and legends
 }
 COLORS = {'nb_of_generations': 'tab:blue', 'population_size': 'tab:green',
           'nurbs_sample_size': 'tab:red', 'rrt_range': 'tab:purple'}
@@ -90,6 +92,20 @@ NB_OF_MARKERS = 10  # Markers per curve, the sweeps have up to ~100 settings
 # Figure sizes in inches: one column of a two-column paper (panels stacked) or the full page width (side by side)
 # Size of each figure in inches, the default is one column of a two-column paper
 FIGURE_SIZE = (3.5, 2.6)
+# --compact: space-limited paper (smaller fonts, thinner lines, one-line axis labels, legends in columns)
+COMPACT_SIZE = (3.5, 1.75)
+COMPACT_STYLE = {'font.size': 7, 'axes.labelsize': 7, 'xtick.labelsize': 6.5, 'ytick.labelsize': 6.5,
+                 'legend.fontsize': 6.5, 'axes.linewidth': 0.5, 'xtick.major.width': 0.5, 'ytick.major.width': 0.5,
+                 'xtick.minor.width': 0.4, 'ytick.minor.width': 0.4, 'xtick.major.size': 2.0, 'ytick.major.size': 2.0,
+                 'xtick.minor.size': 1.2, 'xtick.major.pad': 1.5, 'ytick.major.pad': 1.5, 'axes.labelpad': 1.5}
+LOG_TICKS = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]
+# --half-column: the two figures side by side in one column, each drawn at its printed size (half a column) so that the
+# text is printed at its font size; decades only on the x axis, the legend of the sweeps in the planning time figure only
+HALF_COLUMN_SIZE = (1.7, 1.3)
+HALF_COLUMN_TICKS = [0.001, 0.01, 0.1, 1.0, 10.0]
+# --merged: the two panels in one figure of one column, one legend centered on top, one x label centered below
+MERGED_SIZE = (3.45, 1.45)  # 3.48 in once tightened (column width 3.5 in)
+X_LABEL = 'Hyperparameter value/default value'
 
 # Benchmark planners: (color, marker), in the order of --baselines
 BASELINE_STYLES = [('black', 'o'), ('dimgray', 's'), ('gray', '^'), ('darkgray', 'D'), ('silver', 'v'), ('black', 'x'),
@@ -315,6 +331,28 @@ def plot_quality(ax, sweeps, quality_sweeps, smoothing, quality_x, baselines=(),
         add_baselines_legend(ax, baselines, 'upper right')
 
 
+def cropped_xlim(sweeps):
+    """x limits (setting / default value) from the second earliest start of the sweeps to the last setting: the sweep
+    reaching much lower values (the generations, down to 0.001x) is cut where the other curves start."""
+    starts, ends = [], []
+    for hyperparameter, runs in sweeps.items():
+        x, _, _ = per_setting(runs, hyperparameter, lambda r: r['planning_time'])
+        x = x / HYPERPARAMETERS[hyperparameter][1]
+        starts.append(x.min())
+        ends.append(x.max())
+    starts = sorted(starts)
+    left = starts[1] if len(starts) > 1 else starts[0]
+    return left / 1.08, max(ends) * 1.08
+
+
+def plain_log_ticks(ax, ticks=LOG_TICKS):
+    """Major ticks within the x limits, labelled as plain numbers (0.2, 0.5, 1, 2, 5)."""
+    low, high = ax.get_xlim()
+    ax.set_xticks([t for t in ticks if low <= t <= high])
+    ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda value, _: '{:g}'.format(value)))
+    ax.xaxis.set_minor_formatter(plt.NullFormatter())
+
+
 def check_reference(reference_folders, expected_runs):
     """True if the reference reports contain at least expected_runs runs in total.
 
@@ -322,13 +360,15 @@ def check_reference(reference_folders, expected_runs):
     so the Pareto fronts of the runs of every objective sample the same front and are counted together.
     """
     runs_per_objective = {objective: 0 for objective in OBJECTIVE_COLUMNS}
+    total = 0
     for report, _ in find_reports(reference_folders):
         header, data = open_csv(report)
         ids = set(row[header.index('Id')] for row in data)
+        # Runs with other cost weights (e.g. equal weights) count in the total only
+        total += len(ids)
         for objective, (coefficient, _) in OBJECTIVE_COLUMNS.items():
             if data and float(data[0][header.index(coefficient)]) == 1.0:
                 runs_per_objective[objective] += len(ids)
-    total = sum(runs_per_objective.values())
     print('Reference runs: {} in total, per cost weights {}'.format(total, runs_per_objective))
     return total >= expected_runs
 
@@ -378,7 +418,7 @@ def main():
                         help='Report folders of the reference runs (reference_front.sh), none to draw panel (a) only')
     parser.add_argument('--onboard', nargs='*', default=[], help='Report folders of the sweeps run on the onboard hardware')
     parser.add_argument('--baselines', nargs='*', default=[],
-                        help='<label>=<report folder> of the benchmark planners (compare_baselines.py), drawn as lines')
+                        help='<label>=<report folder> of the benchmark planners (baselines/<map>/native_res/<planner>), drawn as lines')
     parser.add_argument('--baselines-scored-only', action='store_true',
                         help='Score the benchmark planners without adding their solutions to the reference front')
     parser.add_argument('--onboard-label', default='Onboard', help='Legend of the onboard results')
@@ -390,16 +430,34 @@ def main():
                         help='Sweeps shown in panel (b)')
     parser.add_argument('--output', default=os.path.join(HERE, 'computation_analysis'), help='Prefix of the figure files')
     parser.add_argument('--fit', action='store_true', help='Print the fitted runtime model')
-    parser.add_argument('--size', nargs=2, type=float, default=list(FIGURE_SIZE), metavar=('WIDTH', 'HEIGHT'),
-                        help='Size of each figure in inches (default: one column, 3.5 x 2.6)')
+    parser.add_argument('--size', nargs=2, type=float, default=None, metavar=('WIDTH', 'HEIGHT'),
+                        help='Size of each figure in inches (default: one column, 3.5 x 2.6, or 3.5 x 1.75 with --compact)')
+    parser.add_argument('--compact', action='store_true',
+                        help='Compact figures for a space-limited paper (smaller fonts, short labels, legends in columns)')
+    parser.add_argument('--merged', action='store_true',
+                        help='Also write <output>_merged: both panels side by side in one figure (MERGED_SIZE, half-column '
+                             'style), one legend centered on top and one x label centered below')
+    parser.add_argument('--half-column', action='store_true',
+                        help='Compact figures drawn at half a column (both side by side in one column), see HALF_COLUMN_SIZE')
+    parser.add_argument('--crop-x', action='store_true',
+                        help='x axis from where the curves other than the longest sweep start (cropped_xlim)')
+    parser.add_argument('--x-min', type=float,
+                        help='Left limit of the x axis (setting / default value), e.g. 0.1; the right limit is the last '
+                             'setting (cropped_xlim)')
     parser.add_argument('--smooth', type=int, default=1,
                         help='Panel (b): moving average over this number of consecutive settings (1: none)')
     parser.add_argument('--dpi', type=int, default=400, help='Resolution of the PNG')
+    parser.add_argument('--defaults', nargs=4, type=float, metavar=('GENERATIONS', 'POPULATION', 'SAMPLES', 'RRT_RANGE'),
+                        help='Default hyperparameters of the sweeps (x axis = setting / default value), e.g. 1000 40 50 5 '
+                             'for the sweeps run before 2026-10-18 (default: HYPERPARAMETERS)')
     parser.add_argument('--reference-runs', type=int, default=1,
                         help='Number of reference runs (all cost weights together) expected before panel (b) is drawn')
     parser.add_argument('--allow-partial-reference', action='store_true',
                         help='Draw panel (b) even if the reference runs are not complete (preview only)')
     args = parser.parse_args()
+    if args.defaults:
+        for name, value in zip(HYPERPARAMETERS, args.defaults):
+            HYPERPARAMETERS[name] = (HYPERPARAMETERS[name][0], value)
 
     sweeps = load_sweeps(args.sweeps)
     if not sweeps:
@@ -458,10 +516,29 @@ def main():
         print_runtime_model(sweeps)
 
     plt.rcParams.update(PAPER_STYLE)
+    args.half_column = args.half_column or args.merged
+    args.compact = args.compact or args.half_column
+    ticks = HALF_COLUMN_TICKS if args.half_column else LOG_TICKS
+    if args.compact:
+        global LINE_WIDTH, TIME_LINE_WIDTH
+        plt.rcParams.update(COMPACT_STYLE)
+        LINE_WIDTH = 0.8 if args.half_column else 1.0  # Lines of the Pareto quality figure (1.5 pt at the default size)
+        TIME_LINE_WIDTH = 0.7 if args.half_column else TIME_LINE_WIDTH
+    if args.size is None:
+        args.size = list(HALF_COLUMN_SIZE if args.half_column else COMPACT_SIZE if args.compact else FIGURE_SIZE)
     figures = {}
 
     fig_time, ax_time = plt.subplots(figsize=args.size)
     plot_planning_time(ax_time, sweeps, onboard, args.onboard_label, baselines)
+    if args.crop_x or args.x_min:
+        left, right = cropped_xlim(sweeps)
+        ax_time.set_xlim(args.x_min or left, right)
+        plain_log_ticks(ax_time, ticks)
+    if args.compact:
+        ax_time.legend(loc='upper left', ncol=2, frameon=False, handlelength=1.0 if args.half_column else 1.5,
+                       handletextpad=0.3 if args.half_column else 0.4, columnspacing=0.6 if args.half_column else 1.0,
+                       borderaxespad=0.2, labelspacing=0.1 if args.half_column else 0.2)
+        ax_time.set_xlabel(X_LABEL)
     figures['planning_time'] = fig_time
 
     if draw_quality:
@@ -472,7 +549,24 @@ def main():
         if args.quality_x == 'hyperparameter':
             # Same x axis as the planning time figure, a setting is at the same position in both figures
             ax_quality.set_xlim(ax_time.get_xlim())
+            if args.crop_x or args.x_min:
+                plain_log_ticks(ax_quality, ticks)
+        if args.compact:
+            ax_hv = fig_quality.axes[1]
+            ax_quality.set_ylabel('IGD$^+$ (solid)')
+            ax_hv.set_ylabel('HV (dashed)' if args.half_column else 'HV ratio (dashed)')
+            if args.quality_x == 'hyperparameter':
+                ax_quality.set_xlabel(X_LABEL)
+            if args.half_column:
+                ax_quality.get_legend().remove()  # Same colors as the planning time figure next to it, legend there
+            else:
+                # Free area on the left between the IGD+ curves (bottom) and the HV ratio curves (top)
+                ax_quality.legend(loc='center left', bbox_to_anchor=(0.01, 0.62), frameon=False, handlelength=1.2,
+                                  handletextpad=0.4, borderaxespad=0.0, labelspacing=0.2)
         figures['pareto_quality'] = fig_quality
+
+    if args.merged and draw_quality:
+        save_merged(args, sweeps, onboard, baselines, ax_time.get_xlim(), ticks)
 
     # Every figure is saved at its printed size (include it with width=\\columnwidth), the legend of the Pareto
     # quality figure is above its axes so the bounding box is tightened around the content
@@ -482,6 +576,36 @@ def main():
             fig.savefig('{}_{}.{}'.format(args.output, name, extension), dpi=args.dpi, bbox_inches='tight', pad_inches=0.02)
         print('Figure written to {0}_{1}.pdf and {0}_{1}.png'.format(args.output, name))
     plt.show()
+
+def save_merged(args, sweeps, onboard, baselines, xlim, ticks):
+    """Planning time (left) and Pareto quality (right) side by side in one figure: one legend of the sweeps centered on
+    top, one x label centered below, the same x axis in both panels."""
+    fig, (ax_time, ax_quality) = plt.subplots(1, 2, figsize=MERGED_SIZE)
+    plot_planning_time(ax_time, sweeps, onboard, args.onboard_label, baselines)
+    plot_quality(ax_quality, sweeps, args.quality_sweeps, args.smooth, args.quality_x, baselines, xlim)
+    ax_hv = [ax for ax in fig.axes if ax not in (ax_time, ax_quality)][0]
+    for ax in (ax_time, ax_quality):
+        ax.set_xlim(xlim)
+        plain_log_ticks(ax, ticks)
+        ax.set_xlabel('')
+        ax.get_legend().remove()
+    ax_quality.set_ylabel('IGD$^+$ (solid)')
+    ax_hv.set_ylabel('HV (dashed)')
+
+    # Legend of the planning time panel (every sweep, the quality panel shows a subset with the same colors)
+    handles, labels = ax_time.get_legend_handles_labels()
+    legend = fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 1.0), ncol=len(handles),
+                        frameon=False, handlelength=1.2, handletextpad=0.3, columnspacing=1.0, borderaxespad=0.0)
+    label = fig.text(0.5, 0.0, X_LABEL, ha='center', va='bottom', fontsize=plt.rcParams['axes.labelsize'])
+    fig.canvas.draw()
+    to_figure = fig.transFigure.inverted()
+    top = legend.get_window_extent().transformed(to_figure).y0
+    bottom = label.get_window_extent().transformed(to_figure).y1
+    fig.tight_layout(pad=0.2, w_pad=0.8, rect=(0, bottom, 1, top - 0.01))
+    for extension in ['pdf', 'png']:
+        fig.savefig('{}_merged.{}'.format(args.output, extension), dpi=args.dpi, bbox_inches='tight', pad_inches=0.02)
+    print('Figure written to {0}_merged.pdf and {0}_merged.png'.format(args.output))
+
 
 if __name__ == '__main__':
     main()

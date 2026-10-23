@@ -40,7 +40,11 @@
  * a second search with all the inputs; the search succeeds when the analytic expansion reaches the goal at rest
  * (REACH_END), the other outcomes don't reach the goal. Parameters of kino_algorithm.xml, except:
  *     - the limits of Fast-Planner apply to every component (box), they are set to the limits of the robot divided by
- *       sqrt(3) so that ||v|| <= robot.max_speed and ||u|| <= robot.max_acceleration (kino_astar.max_vel/max_acc override)
+ *       sqrt(3) so that ||v|| <= robot.max_speed and ||u|| <= robot.max_acceleration (kino_astar.max_vel/max_acc override).
+ *       With kino_astar.norm_limits, they limit the norms instead and are the limits of the robot: the box caps the
+ *       speed along an axis at 58 % of robot.max_speed
+ *     - kino_astar.time_res: several primitive durations per input (max_tau * time_res * k, 1 in Fast-Planner), finer
+ *       velocities (steps of max_acc / 2 * max_tau * time_res per component) for a robot slower than Fast-Planner's
  *     - horizon: the whole map (global planning instead of the receding horizon of Fast-Planner)
  *     - allocate_num: sized for the maps of the tests
  * The voxels are occupied when the validity of the other benchmarks fails (occupied voxel of the inflated octomap within
@@ -78,8 +82,12 @@ protected:
         KinodynamicAstarConfig config;
         config.max_tau = param<double>("kino_astar.max_tau", 0.4);
         config.init_max_tau = param<double>("kino_astar.init_max_tau", 0.8);
-        config.max_vel = param<double>("kino_astar.max_vel", linedrone_config_.robot_max_speed_ / std::sqrt(3.0));
-        config.max_acc = param<double>("kino_astar.max_acc", linedrone_config_.robot_max_acceleration_ / std::sqrt(3.0));
+        config.norm_limits = param<bool>("kino_astar.norm_limits", false);
+        config.time_res = param<double>("kino_astar.time_res", 1.0);
+        // Limits of the robot (norms): directly with norm_limits, divided by sqrt(3) for the per-component limits
+        const double scale = config.norm_limits ? 1.0 : 1.0 / std::sqrt(3.0);
+        config.max_vel = param<double>("kino_astar.max_vel", linedrone_config_.robot_max_speed_ * scale);
+        config.max_acc = param<double>("kino_astar.max_acc", linedrone_config_.robot_max_acceleration_ * scale);
         config.w_time = param<double>("kino_astar.w_time", 10.0);
         config.horizon = param<double>("kino_astar.horizon", (bounds.row(1) - bounds.row(0)).norm());
         config.resolution_astar = param<double>("kino_astar.resolution_astar", 0.1);
@@ -114,6 +122,10 @@ protected:
 
         NativeTrajectory trajectory = search.getTrajectory(param<double>("kino_astar.sampling_step", 0.05));
         a_result.solutions.push_back(scoreTrajectory(trajectory, true));
+        const ScoredPath& scored = a_result.solutions.back();
+        RCLCPP_INFO(get_logger(), "Kinodynamic A*: duration %.1f s, length %.1f m, max speed %.3f m/s, max acceleration "
+                    "%.3f m/s^2, max occupancy %.3f", scored.fitness[0], scored.length, scored.max_speed,
+                    scored.max_acceleration, scored.max_occupancy);
         a_result.nb_of_control_points = static_cast<int>(trajectory.size());
     }
 

@@ -44,6 +44,9 @@
  *           gamma doesn't change the optimal path.
  *     moar_weight_sweep: one MOAR search per coefficient set of the simplex (step moar_3d.sweep_step), the solutions are
  *           reported like a Pareto front and the voting algorithm of ARENA (optimization.voting) chooses one
+ *     kinodynamic, kinodynamic_weight_sweep: same as moar and moar_weight_sweep with the kinodynamic version of the graph
+ *           search (MoarKinodynamicSearch, parameters moar_3d.kinodynamic.*): states (cell, velocity), double integrator
+ *           motion primitives, the trajectories respect the acceleration limit of the robot and are evaluated with it
  *
  * As in the paper and its implementation (MOPP): A* on states (cell, direction of flight), every action of Fig. 5 including
  * the static action "0" (stop in the cell: branch length of a diagonal step, time cost of 1 at a null speed, velocity
@@ -76,6 +79,7 @@
 #include "common/benchmark_planner_node.h"
 #include "testbench/benchmarks/moar_3d/moar_graph_search.h"
 #include "testbench/benchmarks/moar_3d/moar_graph_setup.h"
+#include "testbench/benchmarks/moar_3d/moar_kinodynamic_search.h"
 #include "testbench/benchmarks/moar_3d/weighted_astar_3d.h"
 
 // System
@@ -106,8 +110,11 @@ protected:
             planAStar(a_start, a_goal, a_result);
         else if (mode == "moar" || mode == "moar_weight_sweep")
             planMoar(a_start, a_goal, mode == "moar_weight_sweep", a_result);
+        else if (mode == "kinodynamic" || mode == "kinodynamic_weight_sweep")
+            planKinodynamic(a_start, a_goal, mode == "kinodynamic_weight_sweep", a_result);
         else
-            throw std::runtime_error("Unknown moar_3d.mode " + mode + " (astar, moar or moar_weight_sweep)");
+            throw std::runtime_error("Unknown moar_3d.mode " + mode +
+                                     " (astar, moar, moar_weight_sweep, kinodynamic or kinodynamic_weight_sweep)");
     }
 
 private:
@@ -179,31 +186,8 @@ private:
         else
             moar_->clearCache();
 
-        // Coefficients (k_S, k_T, k_E), normalized to a sum of 1 (gamma in Eq. 9)
-        std::vector<MoarWeights> weight_sets;
-        if (a_sweep)
-        {
-            const int steps = std::max(1, static_cast<int>(std::lround(1.0 / param<double>("moar_3d.sweep_step", 0.1))));
-            for (int i = 0; i <= steps; ++i)
-                for (int j = 0; j <= steps - i; ++j)
-                    weight_sets.push_back({static_cast<double>(j) / steps, static_cast<double>(i) / steps,
-                                           static_cast<double>(steps - i - j) / steps});
-        }
-        else
-        {
-            // Eq. 9 of MOAR from the risks, or the fixed coefficients (time, safety, energy)
-            const arena_core::ObjectiveCoefficients w = votingUsesRisks() ?
-                arena_core::RankVotingAlgorithm(getVotingSettings().nominal_coefficients).computeCoefficients(getOperationalRisks()) :
-                getFixedCoefficients();
-            double sum = w[0] + w[1] + w[2];
-            if (sum <= 0.0)
-                weight_sets.push_back(MoarWeights());
-            else
-                weight_sets.push_back({w[1] / sum, w[0] / sum, w[2] / sum});
-        }
-
         double search_time = 0.0;
-        for (const MoarWeights& weights : weight_sets)
+        for (const MoarWeights& weights : weightSets(a_sweep))
         {
             std::vector<MoarPathNode> path;
             MoarSearchStats stats;
@@ -226,8 +210,94 @@ private:
         a_result.initialization_time = search_time;
     }
 
+    void planKinodynamic(const Eigen::Vector3d& a_start, const Eigen::Vector3d& a_goal, bool a_sweep, PlanningResult& a_result)
+    {
+        const double clearance = param<double>("moar_3d.clearance", 0.8);
+        const double sdf_d_min = param<double>("moar_3d.sdf_min_distance", 2.0);
+        const double sdf_d_max = param<double>("moar_3d.sdf_max_distance", 9.0);
+        const MoarSpeeds speeds = moarSpeeds(linedrone_config_.robot_max_speed_,
+                                             [this](const std::string& name, double value) { return param<double>(name, value); });
+
+        auto sdf = costmap_mapping_->getCapability<arena_demos::CostSDFCapability>();
+        if (!sdf)
+            throw std::runtime_error("The SDF octomap is not available");
+
+        MoarKinodynamicConfig config;
+        bool changed = gridConfig(config.resolution, config.min_bounds, config.max_bounds);
+        config.velocity_resolution = param<double>("moar_3d.kinodynamic.velocity_resolution", 0.25);
+        config.max_input_steps = static_cast<int>(param<int64_t>("moar_3d.kinodynamic.max_input_steps", 1));
+        config.tau = param<double>("moar_3d.kinodynamic.tau", 2.0);
+        config.max_acceleration = param<double>("moar_3d.kinodynamic.max_acceleration", linedrone_config_.robot_max_acceleration_);
+        config.check_num = static_cast<int>(param<int64_t>("moar_3d.kinodynamic.check_num", 5));
+        config.goal_radius = param<double>("moar_3d.kinodynamic.goal_radius", 1.5 * config.resolution);
+        config.check_resolution = param<double>("moar_3d.kinodynamic.check_resolution", 0.2);
+        config.time_tie_breaker = param<double>("moar_3d.kinodynamic.time_tie_breaker", 0.01);
+        config.heuristic_weight = param<double>("moar_3d.kinodynamic.heuristic_weight", 1.0);
+        config.max_expansions = static_cast<size_t>(param<int64_t>("moar_3d.kinodynamic.max_expansions", 50000000));
+        config.direction_states = param<bool>("moar_3d.kinodynamic.direction_states", true);
+        if (!kinodynamic_ || changed)
+            kinodynamic_ = std::make_unique<MoarKinodynamicSearch>(config, moarCellFn(costmap_mapping_, sdf, clearance, sdf_d_min, sdf_d_max));
+        else
+            kinodynamic_->clearCache(); // The map is received again before every planning
+        const double sampling_step = param<double>("moar_3d.kinodynamic.sampling_step", 0.05);
+
+        double search_time = 0.0;
+        for (const MoarWeights& weights : weightSets(a_sweep))
+        {
+            NativeTrajectory trajectory;
+            MoarKinodynamicStats stats;
+            auto start_time = std::chrono::steady_clock::now();
+            bool found = kinodynamic_->search(a_start, a_goal, weights, speeds, sampling_step, trajectory, &stats);
+            double duration = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
+            search_time += duration;
+
+            RCLCPP_INFO(get_logger(), "MOAR kinodynamic (k_S %.2f, k_T %.2f, k_E %.2f): %s in %.3f s, %zu expansions, %zu states, "
+                        "duration %.1f s", weights.k_s, weights.k_t, weights.k_e, found ? "path found" : "no path", duration,
+                        stats.nb_of_expansions, stats.nb_of_states, found ? trajectory.back().time : 0.0);
+            if (!found)
+                continue;
+
+            // Trajectory as planned, its acceleration checked
+            a_result.solutions.push_back(scoreTrajectory(trajectory, true));
+            a_result.nb_of_control_points = static_cast<int>(trajectory.size());
+        }
+
+        a_result.initialization_time = search_time;
+    }
+
+    /**
+     * @brief Coefficients (k_S, k_T, k_E) of the searches, normalized to a sum of 1 (gamma in Eq. 9): every set of the
+     * simplex with a_sweep, the coefficients of Eq. 9 from the risks or the fixed coefficients otherwise.
+     */
+    std::vector<MoarWeights> weightSets(bool a_sweep)
+    {
+        std::vector<MoarWeights> weight_sets;
+        if (a_sweep)
+        {
+            const int steps = std::max(1, static_cast<int>(std::lround(1.0 / param<double>("moar_3d.sweep_step", 0.1))));
+            for (int i = 0; i <= steps; ++i)
+                for (int j = 0; j <= steps - i; ++j)
+                    weight_sets.push_back({static_cast<double>(j) / steps, static_cast<double>(i) / steps,
+                                           static_cast<double>(steps - i - j) / steps});
+        }
+        else
+        {
+            // Eq. 9 of MOAR from the risks, or the fixed coefficients (time, safety, energy)
+            const arena_core::ObjectiveCoefficients w = votingUsesRisks() ?
+                arena_core::RankVotingAlgorithm(getVotingSettings().nominal_coefficients).computeCoefficients(getOperationalRisks()) :
+                getFixedCoefficients();
+            double sum = w[0] + w[1] + w[2];
+            if (sum <= 0.0)
+                weight_sets.push_back(MoarWeights());
+            else
+                weight_sets.push_back({w[1] / sum, w[0] / sum, w[2] / sum});
+        }
+        return weight_sets;
+    }
+
     std::unique_ptr<WeightedAStar3D> astar_;
     std::unique_ptr<MoarGraphSearch> moar_;
+    std::unique_ptr<MoarKinodynamicSearch> kinodynamic_;
     double resolution_ = 0.0;
     Eigen::Vector3d min_bounds_ = Eigen::Vector3d::Zero();
     Eigen::Vector3d max_bounds_ = Eigen::Vector3d::Zero();

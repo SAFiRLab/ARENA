@@ -1,0 +1,2 @@
+Id,Number of generations,Population size,Nurbs sample size,Time coefficient,Security coefficient,Energy coefficient,Time cost,Security cost,Energy cost,RRT range,Safe,In generated front
+0,0,0,50,1.000000,0.000000,0.000000,170.246137,1.203724,558204.489304,0.100000,1,1

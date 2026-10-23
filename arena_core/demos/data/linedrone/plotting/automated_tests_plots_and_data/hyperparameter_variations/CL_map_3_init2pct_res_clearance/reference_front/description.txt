@@ -1,0 +1,5 @@
+Reference front of CL_map_3 (500 runs, 5000 generations, population 250, RRT range 2 m, 250 samples)
+
+ARENA initialization: 2% shortest path A*, 2% safer RRT (SDF), the rest random RRT. Final evaluation of the
+reported solutions at half the octomap resolution. Every reported solution exported with its clearance
+(*_solutions.csv: average and minimum distance to the inflated octomap). Run 2026-10-17
